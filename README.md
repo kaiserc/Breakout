@@ -4,7 +4,11 @@ A classic **Breakout / Arkanoid** arcade game built with plain HTML, CSS, and
 JavaScript (Canvas 2D). Zero dependencies, zero build steps, completely offline.
 Just open the file and play.
 
-![preview](https://img.shields.io/badge/platform-Web-blue) ![no deps](https://img.shields.io/badge/deps-none-green) ![sound](https://img.shields.io/badge/audio-WebAudio_Synth-brightgreen)
+[![Play Live](https://img.shields.io/badge/Play_Live-GitHub_Pages-success?style=for-the-badge&logo=github)](https://kaiserc.github.io/Breakout/)
+
+![platform](https://img.shields.io/badge/platform-Web-blue) ![no deps](https://img.shields.io/badge/deps-none-green) ![sound](https://img.shields.io/badge/audio-WebAudio_Synth-brightgreen)
+
+🎮 **Play Online Now**: [https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)
 
 ---
 
