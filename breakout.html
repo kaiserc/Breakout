@@ -264,6 +264,62 @@
     playTone(baseFreq * pitchShift, 0.09, 'triangle', 0.12);
   }
 
+  function playBrickShatterSfx() {
+    if (muted) return;
+    try {
+      initAudio();
+      if (!audioCtx) return;
+
+      // 1. Subtle noise burst for crisp ceramic/glass shatter texture
+      const dur = 0.045;
+      const bufferSize = Math.floor(audioCtx.sampleRate * dur);
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.22));
+      }
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2800, audioCtx.currentTime);
+      filter.Q.setValueAtTime(1.4, audioCtx.currentTime);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.065, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+      noise.start();
+
+      // 2. Micro pop chirp
+      const osc = audioCtx.createOscillator();
+      const oscGain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(750, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + 0.035);
+      oscGain.gain.setValueAtTime(0.045, audioCtx.currentTime);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.035);
+      osc.connect(oscGain);
+      oscGain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.035);
+    } catch (e) {}
+  }
+
+  function playBrickCrackSfx() {
+    if (muted) return;
+    try {
+      initAudio();
+      if (!audioCtx) return;
+      playTone(190, 0.04, 'triangle', 0.07, 80);
+    } catch (e) {}
+  }
+
   function playPaddleTone(hitOffset) {
     const freq = 200 + Math.abs(hitOffset) * 160;
     playTone(freq, 0.07, 'sine', 0.14);
@@ -629,7 +685,10 @@
 
     if (brick.hp <= 0) {
       brick.alive = false;
+      playBrickShatterSfx();
       maybeDropPowerup(brick.x + brick.w / 2, brick.y + brick.h / 2);
+    } else {
+      playBrickCrackSfx();
     }
   }
 
