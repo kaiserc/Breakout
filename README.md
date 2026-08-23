@@ -6,7 +6,7 @@ Just open the file and play.
 
 [![Play Live](https://img.shields.io/badge/Play_Live-GitHub_Pages-success?style=for-the-badge&logo=github)](https://kaiserc.github.io/Breakout/)
 
-![platform](https://img.shields.io/badge/platform-Web-blue) ![no deps](https://img.shields.io/badge/deps-none-green) ![sound](https://img.shields.io/badge/audio-WebAudio_Synth-brightgreen)
+![platform](https://img.shields.io/badge/platform-Web-blue) ![no deps](https://img.shields.io/badge/deps-none-green) ![sound](https://img.shields.io/badge/audio-WebAudio_Synth-brightgreen) [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 🎮 **Play Online Now**: [https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)
 
@@ -82,6 +82,7 @@ Then open <http://localhost:8000/breakout.html>.
 | `README.md`      | Overview and feature highlights. |
 | `GUIDE.md`       | In-depth strategy guide, power-up combos, and high-score tactics. |
 | `start.bat`      | Quick launcher script for Windows. |
+| `LICENSE`        | MIT License terms. |
 
 ---
 
@@ -102,4 +103,4 @@ if (Math.random() < 0.18) { /* spawn power-up */ }
 
 ## 📄 License
 
-Free to use, modify, and share for any purpose.
+This project is open source and available under the [MIT License](LICENSE).
