@@ -55,10 +55,14 @@ Just open the file and play.
 
 ## ▶️ How to run
 
-### Option 1 — double-click (simplest)
+### Option 1 — Play Live Online (Instant)
+Click to play directly in your web browser:  
+👉 **[https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)**
+
+### Option 2 — Double-click local file
 Open `breakout.html` directly in any modern browser (Chrome, Firefox, Edge, Safari).
 
-### Option 2 — local web server
+### Option 3 — Local web server
 ```bash
 # Python 3
 python -m http.server 8000

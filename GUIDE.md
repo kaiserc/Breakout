@@ -2,6 +2,8 @@
 
 A complete guide to mastering **Breakout / Arkanoid Deluxe**. Read this to maximize your combos, master power-ups, and reach the high-score leaderboard.
 
+🎮 **Play Live**: [https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)
+
 ---
 
 ## 1. The Goal
