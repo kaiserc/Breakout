@@ -97,7 +97,7 @@ When a brick shatters, there is an **18% chance** it drops a capsule. Watch out 
 👉 **[https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)**
 
 ### Option 2 — Double-click local file
-Open [`index.html`](./index.html) or [`breakout.html`](./breakout.html) directly in any modern browser (Chrome, Edge, Firefox, Safari).
+Open [`breakout.html`](./breakout.html) directly in any modern browser (Chrome, Edge, Firefox, Safari).
 
 ### Option 3 — Local Web Server
 Start a web server inside this project directory:
@@ -108,7 +108,7 @@ python -m http.server 8000
 # Node.js
 npx serve -l 8000 .
 ```
-Then load **<http://localhost:8000/>** in your browser.
+Then load **[http://localhost:8000/breakout.html](http://localhost:8000/breakout.html)** in your browser.
 
 ---
 
@@ -116,8 +116,7 @@ Then load **<http://localhost:8000/>** in your browser.
 
 | File | Purpose |
 |------|---------|
-| [`index.html`](./index.html)    | The complete standalone game (HTML + CSS + Canvas + Synth in one file). |
-| [`breakout.html`](./breakout.html) | Standalone mirror of the game. |
+| [`breakout.html`](./breakout.html) | The complete standalone game (HTML + CSS + Canvas + Synth in one file). |
 | [`README.md`](./README.md)      | Project documentation and highlights. |
 | [`GUIDE.md`](./GUIDE.md)       | Deep strategic guide, advanced level charts, and combo scoring. |
 | [`start.bat`](./start.bat)      | Quick server startup script for Windows. |
