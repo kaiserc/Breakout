@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Breakout — Arkanoid Deluxe</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111827'/%3E%3Crect x='4' y='6' width='24' height='9' rx='2' fill='%23f43f5e'/%3E%3Crect x='4' y='17' width='11' height='9' rx='2' fill='%2338bdf8'/%3E%3Crect x='17' y='17' width='11' height='9' rx='2' fill='%23a855f7'/%3E%3C/svg%3E">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&family=Orbitron:wght@500;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #0b0e1a;
@@ -18,7 +17,7 @@
   html, body {
     height: 100%;
     background: radial-gradient(circle at 50% 0%, #16213b 0%, var(--bg) 75%);
-    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: var(--text);
     display: flex;
     align-items: center;
@@ -36,7 +35,7 @@
     gap: 12px;
   }
   h1 {
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-weight: 900;
     letter-spacing: 8px;
     font-size: 24px;
@@ -73,7 +72,7 @@
     z-index: 10;
   }
   .game-title {
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 2px;
@@ -129,7 +128,7 @@
   }
   .overlay.hidden { display: none; }
   .overlay h2 {
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 28px;
     letter-spacing: 4px;
     background: linear-gradient(90deg, #fff, var(--accent));
@@ -186,7 +185,7 @@
   .menu-view.hidden { display: none !important; }
   
   .menu-logo {
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 34px !important;
     font-weight: 900;
     letter-spacing: 8px;
@@ -198,7 +197,7 @@
     text-shadow: 0 0 30px rgba(56, 249, 215, 0.4);
   }
   .subtitle {
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 9px;
     letter-spacing: 4px;
     opacity: 0.6;
@@ -352,7 +351,7 @@
     margin-bottom: 6px;
     color: var(--accent3);
     text-align: center;
-    font-family: 'Orbitron', sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   .achievements-list {
     display: flex;
