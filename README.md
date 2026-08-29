@@ -1,4 +1,4 @@
-# 🧨 Breakout — Arkanoid Deluxe
+# 🧱 Breakout — Arkanoid Deluxe
 
 A classic, highly polished **Breakout / Arkanoid** arcade clone built with vanilla HTML5, CSS3, and JavaScript (Canvas 2D). Zero external dependencies, offline-capable, and optimized for both desktop and mobile layouts.
 
@@ -18,28 +18,30 @@ A classic, highly polished **Breakout / Arkanoid** arcade clone built with vanil
 ## ✨ Features
 
 - **Arcade Visuals & Juiced Game Feel**:
-  - Particle explosions on brick shattering.
+  - Particle explosions on brick shattering and explosive chain reactions.
   - Glowing comet motion trails behind fast-moving balls.
-  - Micro-screen shake, floating combo popups, and visual timer countdown bars.
+  - Micro-screen shake, floating combo popups, and visual countdown timer badges.
   - Procedural crack rendering on damaged multi-hit bricks.
+  - Hi-DPI / Retina canvas support (`devicePixelRatio`).
 - **8 Campaign Levels & Procedural Endless Mode**:
-  - 8 hand-crafted patterned maps (Maze, Columns, Invader, pillars, and fortresses).
-  - Endless Mode starting at Level 9 with procedural grid generation and speed scaling (+0.4 per level).
+  - 8 hand-crafted patterned maps (The Wall, Diamond, Space Invader, Pillars, Heart, Hourglass, The Maze, Final Citadel).
+  - Endless Mode starting at Level 9 with procedural grid generation, dynamic wave mutators (*Falling Sky*, *Shifting Horizon*, *Armored Defense*, *Checkerboard Matrix*, *Speed Surge*), and speed scaling (+0.4 per level).
 - **Interactive Multi-Screen Overlay Menus**:
-  - Glassmorphic panels for Play Campaign, Endless Mode, Stats, achievements, and Level Select.
+  - Glassmorphic panels for Campaign, Endless Mode, Stats, Achievements, and Level Select.
   - Automatic persistence of high scores, level progression, and stats (`localStorage`).
 - **High-Fidelity Skin Themes**:
   - **Neon Cyberpunk**: Glowing cyan and hot-pink neon styling (default).
   - **Emerald Matrix**: Green terminal style with falling digital Matrix code rain backgrounds.
   - **Sunset Wave**: Vaporwave orange, pink, and purple gradient theme.
   - **Classic Arcade**: Hard-edged pixel graphics and solid retro colors.
-- **Web Audio procedural Synthesis**:
+- **Web Audio Procedural Synthesis**:
   - Harmonized pentatonic rows (higher bricks play higher notes) with dynamic combo chords.
   - Real-time synthesized laser blaster sound effects, power-up arpeggios, and fanfares.
+  - Persistent Mute state saved across sessions.
 - **Engine Performance & Game Physics**:
   - **Object Pools** (`particlePool`, `laserPool`, `floatingTextPool`, `powerupPool`) that recycle objects to eliminate garbage collection micro-stuttering.
-  - **Continuous Collision Detection (CCD)**: divided physics updates into 3 sub-steps per frame to prevent high-speed tunneling through bricks.
-  - **Paddle Spin**: deflection angle adjusts depending on the paddle's speed and movement direction during contact.
+  - **Continuous Collision Detection (CCD)**: Sub-stepped physics updates to prevent high-speed tunneling through bricks.
+  - **Paddle Spin**: Deflection angle adjusts depending on the paddle's speed and movement direction during contact.
 
 ---
 
@@ -50,26 +52,26 @@ When a brick shatters, there is an **18% chance** it drops a capsule. Watch out 
 ### Positive Power-Ups
 | Icon | Name | Effect | Color | Duration |
 |:---:|---|---|---|---|
-| `WIDE` | Wide Paddle | Expands the paddle's width | 🟦 Blue | ~12 s |
+| `WIDE` | Wide Paddle | Expands the paddle's width (cancels `TINY`) | 🟦 Blue | ~12 s |
 | `MULTI` | Multi-Ball | Splits all active balls into 3 (max 8) | 🟨 Yellow | Instant |
 | `SLOW` | Slow Ball | Reduces ball velocity for control | 🟩 Green | ~9 s |
-| `+1` | Extra Life | Grants an additional life | 💖 Pink | Instant |
+| `+1` | Extra Life | Grants an additional life (Max 5, rare drop) | 💖 Pink | Instant |
 | `LASER` | Laser Cannons | Mounts twin blasters (Space or Click to fire) | 🔴 Red | ~10 s |
-| `FIRE` | Fireball | Ball plows straight through normal bricks | 🟧 Orange | ~8 s |
+| `FIRE` | Fireball | Ball plows straight through single-hit bricks | 🟧 Orange | ~8 s |
 | `CATCH` | Sticky Paddle | Magnetically catches the ball (Space/Click to release) | 🟪 Purple | ~12 s |
 | `SHIELD` | Screen Shield | Places a safety bounce line at the screen bottom | 💎 Cyan | Until hit |
 
 ### Negative Power-Downs
 | Icon | Name | Effect | Color | Duration |
 |:---:|---|---|---|---|
-| `TINY` | Narrow Paddle | Narrows the paddle to a tiny width | 🟥 Dark Red | ~10 s |
+| `TINY` | Narrow Paddle | Narrows the paddle to a tiny width (cancels `WIDE`) | 🟥 Dark Red | ~10 s |
 | `FAST` | Fast Ball | Speeds up the ball by `1.45x` | 🟨 Green-Yellow | ~8 s |
 | `CONFUSE` | Reversed | Inverts left/right arrow keys & pointer movement | 🟪 Deep Purple | ~6 s |
 
 ---
 
 ## 🧱 Brick Types
-* **Normal Bricks**: Take 1 to 3 hits to destroy (shades of pink, yellow, and red). Render cracks when damaged.
+* **Normal Bricks**: Take 1 to 3 hits to destroy. Render procedural cracks when damaged.
 * **Invincible Metal Bricks** (`M`): Indestructible steel block hazard. Balls bounce off, and they do not count towards clearing levels.
 * **Explosive Bricks** (`E`): Trigger a chain reaction damaging all 8 adjacent bricks when shattered.
 * **Mystery Bricks** (`?`): Guaranteed random positive power-up or negative power-down drop.
@@ -91,32 +93,35 @@ When a brick shatters, there is an **18% chance** it drops a capsule. Watch out 
 
 ## ▶️ How to Run
 
-> [!NOTE]
-> Modern web browsers restrict `localStorage` access on pages loaded via the `file://` protocol (e.g. double-clicking `breakout.html`). To persist stats, high scores, and achievements, we recommend running a local web server.
-
 ### Option 1 — Play Live Online
 👉 **[https://kaiserc.github.io/Breakout/](https://kaiserc.github.io/Breakout/)**
 
-### Option 2 — Local Web Server
+### Option 2 — Double-click local file
+Open [`index.html`](./index.html) or [`breakout.html`](./breakout.html) directly in any modern browser (Chrome, Edge, Firefox, Safari).
+
+### Option 3 — Local Web Server
 Start a web server inside this project directory:
 ```bash
 # Python 3
-python -m http.server 8080
+python -m http.server 8000
 
 # Node.js
-npx serve .
+npx serve -l 8000 .
 ```
-Then load **[http://localhost:8080/breakout.html](http://localhost:8080/breakout.html)** in Chrome, Brave, Firefox, or Safari.
+Then load **<http://localhost:8000/>** in your browser.
 
 ---
 
 ## 📁 Project Files
 
-- **[`breakout.html`](file:///home/chris/Git/Breakout/breakout/breakout.html)**: The complete standalone game (HTML, CSS styles, Canvas renderers, and Synthesized Audio engine).
-- **[`README.md`](file:///home/chris/Git/Breakout/breakout/README.md)**: Project documentation and highlights.
-- **[`GUIDE.md`](file:///home/chris/Git/Breakout/breakout/GUIDE.md)**: Deep strategic guide, advanced level charts, and combo scoring.
-- **[`start.bat`](file:///home/chris/Git/Breakout/breakout/start.bat)**: Quick server startup script for Windows.
-- **[`LICENSE`](file:///home/chris/Git/Breakout/breakout/LICENSE)**: License specifications (MIT).
+| File | Purpose |
+|------|---------|
+| [`index.html`](./index.html)    | The complete standalone game (HTML + CSS + Canvas + Synth in one file). |
+| [`breakout.html`](./breakout.html) | Standalone mirror of the game. |
+| [`README.md`](./README.md)      | Project documentation and highlights. |
+| [`GUIDE.md`](./GUIDE.md)       | Deep strategic guide, advanced level charts, and combo scoring. |
+| [`start.bat`](./start.bat)      | Quick server startup script for Windows. |
+| [`LICENSE`](./LICENSE)        | License specifications (MIT). |
 
 ---
 
