@@ -809,7 +809,7 @@
       for (const l of this.pool) {
         if (!l.active) continue;
         l.y += l.vy * (dt / 16.667);
-        if (l.y + l.h < 0) {
+        if (l.y + l.h < 40) {
           l.active = false;
         }
       }
@@ -1341,16 +1341,16 @@
     for (let i = balls.length - 1; i >= 0; i--) {
       const b = balls[i];
 
+      // Ball trail history
+      if (!b.trail) b.trail = [];
+      b.trail.push({ x: b.x, y: b.y });
+      if (b.trail.length > 6) b.trail.shift();
+
       if (b.caught) {
         b.x = paddle.x + (b.stuckOffset || pw / 2);
         b.y = paddle.y - b.r - 1;
         continue;
       }
-
-      // Ball trail history
-      if (!b.trail) b.trail = [];
-      b.trail.push({ x: b.x, y: b.y });
-      if (b.trail.length > 6) b.trail.shift();
 
       // CCD sub-steps
       const subSteps = 3;
@@ -1362,7 +1362,7 @@
         // Wall bounces
         if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx); playTone(300, 0.04, 'sine', 0.08); }
         else if (b.x + b.r > W) { b.x = W - b.r; b.vx = -Math.abs(b.vx); playTone(300, 0.04, 'sine', 0.08); }
-        if (b.y - b.r < 0) { b.y = b.r; b.vy = Math.abs(b.vy); playTone(300, 0.04, 'sine', 0.08); }
+        if (b.y - b.r < 40) { b.y = 40 + b.r; b.vy = Math.abs(b.vy); playTone(300, 0.04, 'sine', 0.08); }
 
         // Bottom shield check
         if (effects.shield && b.y + b.r >= H - 5) {
@@ -1664,54 +1664,50 @@
     function drawHUD() {
     // 1. Top HUD Bar Glass Panel
     ctx.fillStyle = 'rgba(7, 10, 20, 0.88)';
-    ctx.fillRect(0, 0, W, 72);
+    ctx.fillRect(0, 0, W, 40);
     ctx.fillStyle = 'rgba(56, 249, 215, 0.18)';
-    ctx.fillRect(0, 71, W, 1);
+    ctx.fillRect(0, 39, W, 1);
 
     // 2. Score & Best (Top Left)
-    ctx.fillStyle = '#8892b0';
-    ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('SCORE', 16, 18);
-
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(score.toLocaleString(), 16, 36);
-
-    // Hi-score label
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    const scoreStr = `SCORE: ${score.toLocaleString()}`;
+    ctx.fillText(scoreStr, 12, 17);
+    
+    const scoreWidth = ctx.measureText(scoreStr).width;
     ctx.fillStyle = '#ffd166';
-    ctx.font = 'bold 10px system-ui, sans-serif';
-    ctx.fillText(`HI: ${highScore.toLocaleString()}`, 16, 54);
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillText(`HI: ${highScore.toLocaleString()}`, 12 + scoreWidth + 10, 17);
 
-    // 3. Lives (Top Center) - Sleek compact counter
-    ctx.fillStyle = '#8892b0';
-    ctx.font = 'bold 10px system-ui, sans-serif';
+    // 3. Lives & Combo (Top Center)
     ctx.textAlign = 'center';
-    ctx.fillText('LIVES', W / 2, 18);
-
+    ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillStyle = '#ff4d8d';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(`💖 × ${lives}`, W / 2, 36);
-
-    // Combo Counter (Center subtitle if > 1)
+    ctx.fillText(`💖 × ${lives}`, W / 2, 17);
+    
     if (combo > 1) {
+      ctx.textAlign = 'left';
       ctx.fillStyle = '#38f9d7';
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillText(`COMBO x${combo}`, W / 2, 54);
+      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.fillText(`• COMBO x${combo}`, W / 2 + 35, 17);
     }
 
-    // 4. Mode / Level / Wave (Top Right, clear of the header action buttons)
+    // 4. Mode / Level / Wave (Top Right)
     const modePrefix = isEndlessMode ? 'WAVE' : 'LEVEL';
-    ctx.fillStyle = '#8892b0';
-    ctx.font = 'bold 10px system-ui, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(modePrefix, W - 120, 18);
-
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    const lvlStr = `${level}`;
+    const lvlWidth = ctx.measureText(lvlStr).width;
+    
     ctx.fillStyle = '#38f9d7';
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    ctx.fillText(`${level}`, W - 120, 36);
+    ctx.textAlign = 'right';
+    ctx.fillText(lvlStr, W - 12, 17);
+    
+    ctx.fillStyle = '#8892b0';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillText(modePrefix, W - 12 - lvlWidth - 4, 17);
 
-    // 5. Active Power-Up Timers with countdown pill badges (Row 2: y = 54)
+    // 5. Active Power-Up Timers with countdown pill badges
     const activeEffects = [];
     if (effects.wide > 0) activeEffects.push({ name: 'WIDE', time: effects.wide, max: 12000, color: POWERUPS.WIDE.color });
     if (effects.tiny > 0) activeEffects.push({ name: 'TINY', time: effects.tiny, max: 10000, color: POWERUPS.TINY.color });
@@ -1725,8 +1721,8 @@
     if (activeEffects.length > 0) {
       const badgeW = 68, badgeH = 15, gap = 6;
       const totalW = activeEffects.length * (badgeW + gap) - gap;
-      let badgeX = Math.max(105, Math.min(W - totalW - 10, (W - totalW) / 2));
-      const badgeY = 52;
+      let badgeX = Math.max(12, Math.min(W - totalW - 12, (W - totalW) / 2));
+      const badgeY = 23;
 
       for (const eff of activeEffects) {
         const remRatio = Math.max(0, eff.time / eff.max);
