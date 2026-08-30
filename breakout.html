@@ -626,6 +626,16 @@
   let isEndlessMode = false;
   let maxUnlockedLevel = parseInt(localStorage.getItem('breakout_unlocked_level') || '1', 10);
 
+  // Endless Mode Mutators
+  const ENDLESS_MUTATORS = [
+    { id: 'falling_sky', name: 'Falling Sky', desc: 'Ceiling descends slowly towards paddle!' },
+    { id: 'shifting_horizon', name: 'Shifting Horizon', desc: 'Brick rows sway side-to-side!' },
+    { id: 'armored', name: 'Armored Defense', desc: 'Reinforced multi-hit fortress with steel sentinels!' },
+    { id: 'speed_surge', name: 'Speed Surge', desc: 'High-velocity turbo balls (+25% speed)!' },
+    { id: 'checkerboard', name: 'Checkerboard Matrix', desc: 'Sparse precision bank-shot grid!' }
+  ];
+  let currentMutator = null;
+
   // Statistics and achievements tracking
   let stats = {
     gamesPlayed: 0,
@@ -656,7 +666,11 @@
   
   function getLevelSpeed() {
     if (isEndlessMode) {
-      return baseSpeed + (level - 1) * 0.40;
+      let sp = baseSpeed + (level - 1) * 0.40;
+      if (currentMutator && currentMutator.id === 'speed_surge') {
+        sp *= 1.25;
+      }
+      return sp;
     }
     return baseSpeed + (level - 1) * 0.45;
   }
@@ -717,13 +731,13 @@
     { id: 'combo10', title: 'Combo King', desc: 'Reach a x10 combo multiplier', icon: '👑', unlocked: false },
     { id: 'expo5', title: 'Demolitionist', desc: 'Trigger 5 explosive chain reactions', icon: '🧨', unlocked: false },
     { id: 'perfect', title: 'Untouchable', desc: 'Clear any level without losing a life', icon: '🛡️', unlocked: false },
-    { id: 'inferno', title: 'Inferno Master', desc: 'Break 12 bricks with a single Fireball', icon: '🔥', unlocked: false },
-    { id: 'chaos8', title: 'Multiball Chaos', desc: 'Control 5 or more active balls', icon: '🎱', unlocked: false },
+    { id: 'inferno', title: 'Inferno Master', desc: 'Break 12 bricks with a single Fireball streak', icon: '🔥', unlocked: false },
+    { id: 'chaos8', title: 'Multiball Chaos', desc: 'Control 8 active balls simultaneously', icon: '🎱', unlocked: false },
     { id: 'laser20', title: 'Laser Frenzy', desc: 'Destroy 20 bricks with lasers', icon: '⚡', unlocked: false },
     { id: 'purist', title: 'Purist', desc: 'Clear a level without collecting power-ups', icon: '✨', unlocked: false },
     { id: 'clear8', title: 'Grand Champion', desc: 'Conquer Level 8 & clear campaign', icon: '🏆', unlocked: false },
     { id: 'endless12', title: 'Endless Survivor', desc: 'Reach Level 12 in Endless Mode', icon: '🌌', unlocked: false },
-    { id: 'brick1000', title: 'Demolition Crew', desc: 'Break 500 total lifetime bricks', icon: '🧱', unlocked: false }
+    { id: 'brick1000', title: 'Demolition Crew', desc: 'Break 1,000 total lifetime bricks', icon: '🧱', unlocked: false }
   ];
 
   // ---- Visual Effects ----
@@ -757,7 +771,7 @@
     SHIELD:  { label: 'B',    color: '#00ffcc', desc: 'Bottom screen barrier', isNegative: false },
     TINY:    { label: 'T',    color: '#ff3333', desc: 'Narrows paddle for 10s', isNegative: true },
     FAST:    { label: 'A',    color: '#ccff00', desc: 'Speeds up balls for 8s', isNegative: true },
-    CONFUSE: { label: '?',    color: '#aa00ff', desc: 'Reverses controls for 6s', isNegative: true }
+    CONFUSE: { label: '⇄',    color: '#ff0055', desc: 'Joker Hazard: Inverts controls for 6s (AVOID!)', isNegative: true, isJoker: true }
   };
   const POWERUP_KEYS = Object.keys(POWERUPS);
   const POWERUP_W = 32;
@@ -925,9 +939,31 @@
     },
     update(dt, step) {
       const pw = currentPaddleWidth();
+      const paddleCenterX = paddle.x + pw / 2;
       for (const p of this.pool) {
         if (!p.active) continue;
         p.y += p.vy * step;
+
+        // Soft magnetic drift towards paddle for +1 LIFE & MULTI capsules
+        if (p.type === 'LIFE' || p.type === 'MULTI') {
+          const dx = paddleCenterX - p.x;
+          if (Math.abs(dx) < 180 && p.y > H * 0.35 && p.y < paddle.y + PADDLE_H) {
+            p.x += Math.sign(dx) * Math.min(Math.abs(dx) * 0.05, 1.8) * step;
+          }
+        }
+
+        // Joker / Reverse warning particle trail
+        if (p.type === 'CONFUSE' && Math.random() < 0.35) {
+          particlePool.spawn(
+            p.x + (Math.random() - 0.5) * (POWERUP_W + 8),
+            p.y + (Math.random() - 0.5) * (POWERUP_H + 4),
+            (Math.random() - 0.5) * 1.5,
+            -Math.random() * 1.2 - 0.4,
+            Math.random() < 0.5 ? '#ff0055' : '#ffd166',
+            1.8,
+            260
+          );
+        }
         if (p.y + POWERUP_H / 2 >= paddle.y && p.y - POWERUP_H / 2 <= paddle.y + PADDLE_H && p.x + POWERUP_W / 2 >= paddle.x && p.x - POWERUP_W / 2 <= paddle.x + pw) {
           activatePowerup(p.type);
           p.active = false;
@@ -939,25 +975,80 @@
       }
     },
     draw() {
+      const now = Date.now();
       for (const p of this.pool) {
         if (!p.active) continue;
-        const c = POWERUPS[p.type].color;
+        const info = POWERUPS[p.type];
+        const isJoker = p.type === 'CONFUSE';
+        const isNegative = info.isNegative;
+
+        if (isJoker) {
+          // 1. Pulsing Warning Danger Halo
+          const pulse = (Math.sin(now * 0.009) + 1) / 2;
+          const auraW = POWERUP_W + 12 + pulse * 6;
+          const auraH = POWERUP_H + 10 + pulse * 4;
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(p.x, p.y, auraW / 2, auraH / 2, 0, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255, 0, 85, ${0.18 + pulse * 0.22})`;
+          ctx.fill();
+
+          // Rotating dashed hazard warning ring
+          ctx.strokeStyle = `rgba(255, 230, 100, ${0.7 + pulse * 0.3})`;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 3]);
+          ctx.lineDashOffset = -now * 0.02;
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          // Floating "⚠️ REVERSE" danger beacon tag
+          ctx.save();
+          ctx.fillStyle = pulse > 0.5 ? '#ff0055' : '#ffe66d';
+          ctx.font = 'bold 9px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = '#ff0055';
+          ctx.shadowBlur = 6;
+          ctx.fillText('⚠️ REVERSE', p.x, p.y - POWERUP_H / 2 - 5);
+          ctx.restore();
+        }
+
+        const c = info.color;
         ctx.fillStyle = c;
-        if (THEMES[currentTheme].useGlow) {
-          ctx.shadowColor = c;
-          ctx.shadowBlur = 8;
+        if (THEMES[currentTheme].useGlow || isJoker) {
+          ctx.shadowColor = isJoker ? '#ff0055' : c;
+          ctx.shadowBlur = isJoker ? 14 : 8;
         }
         roundRect(p.x - POWERUP_W / 2, p.y - POWERUP_H / 2, POWERUP_W, POWERUP_H, POWERUP_H / 2);
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        ctx.fillStyle = '#04121a';
-        ctx.font = 'bold 12px system-ui, sans-serif';
-        ctx.fillText(POWERUPS[p.type].label, p.x, p.y + 4);
+        if (isJoker) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 13px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(info.label, p.x, p.y + 4);
+        } else if (isNegative) {
+          ctx.strokeStyle = '#ff3333';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = '#04121a';
+          ctx.font = 'bold 12px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(info.label, p.x, p.y + 4);
+        } else {
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.fillStyle = '#04121a';
+          ctx.font = 'bold 12px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(info.label, p.x, p.y + 4);
+        }
       }
     }
   };
@@ -980,7 +1071,9 @@
   const MUSIC_KEYS = ['synthwave', 'chiptune', 'ambient', 'cyber', 'off'];
   if (!MUSIC_TRACKS[currentMusic]) currentMusic = 'synthwave';
 
+  let masterGainNode = null;
   let musicGainNode = null;
+  let sfxGainNode = null;
   let sharedNoiseBuffer = null;
   let musicStep = 0;
   let nextStepTime = 0;
@@ -993,10 +1086,20 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+        // Master Gain Node
+        masterGainNode = audioCtx.createGain();
+        masterGainNode.gain.setValueAtTime(muted ? 0.0001 : 1.0, audioCtx.currentTime);
+        masterGainNode.connect(audioCtx.destination);
+
         // Music Master Gain Node
         musicGainNode = audioCtx.createGain();
         musicGainNode.gain.setValueAtTime(muted || currentMusic === 'off' ? 0.0001 : 0.11, audioCtx.currentTime);
-        musicGainNode.connect(audioCtx.destination);
+        musicGainNode.connect(masterGainNode);
+
+        // SFX Master Gain Node
+        sfxGainNode = audioCtx.createGain();
+        sfxGainNode.gain.setValueAtTime(muted ? 0.0001 : 0.9, audioCtx.currentTime);
+        sfxGainNode.connect(masterGainNode);
 
         // Pre-create 1-second white noise buffer for percussions & shatter SFX
         const sr = audioCtx.sampleRate || 44100;
@@ -1009,15 +1112,25 @@
       if (audioCtx.state === 'suspended') {
         audioCtx.resume();
       }
-      startMusicEngine();
+      if (currentMusic !== 'off' && !muted) {
+        startMusicEngine();
+      }
     } catch (e) {}
   }
 
   function startMusicEngine() {
-    if (!audioCtx || musicSchedulerTimer) return;
+    if (!audioCtx || currentMusic === 'off' || muted) return;
+    if (musicSchedulerTimer) return;
     nextStepTime = audioCtx.currentTime + 0.05;
     musicStep = 0;
     musicSchedulerTimer = setInterval(musicSchedulerTick, 25);
+  }
+
+  function stopMusicEngine() {
+    if (musicSchedulerTimer) {
+      clearInterval(musicSchedulerTimer);
+      musicSchedulerTimer = null;
+    }
   }
 
   function updateMusicUI() {
@@ -1047,11 +1160,21 @@
     musicStep = 0;
     if (audioCtx) {
       nextStepTime = audioCtx.currentTime + 0.05;
-      if (musicGainNode) {
-        const targetVol = (muted || currentMusic === 'off') ? 0.0001 : (state === STATE.MENU ? 0.07 : 0.11);
-        musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-        musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-        musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+      if (currentMusic === 'off' || muted) {
+        stopMusicEngine();
+        if (musicGainNode) {
+          musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+          musicGainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+        }
+      } else {
+        startMusicEngine();
+        if (musicGainNode) {
+          const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
+          musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+          musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+        }
       }
     }
     updateMusicUI();
@@ -1380,7 +1503,7 @@
       gain.gain.setValueAtTime(vol, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(sfxGainNode || masterGainNode || audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + dur);
     } catch (e) {}
@@ -1413,7 +1536,7 @@
 
       noise.connect(filter);
       filter.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(sfxGainNode || masterGainNode || audioCtx.destination);
       noise.start();
       noise.stop(audioCtx.currentTime + dur);
 
@@ -1426,7 +1549,7 @@
       oscGain.gain.setValueAtTime(0.045, audioCtx.currentTime);
       oscGain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.035);
       osc.connect(oscGain);
-      oscGain.connect(audioCtx.destination);
+      oscGain.connect(sfxGainNode || masterGainNode || audioCtx.destination);
       osc.start();
       osc.stop(audioCtx.currentTime + 0.035);
     } catch (e) {}
@@ -1453,6 +1576,13 @@
   function playPowerupJingle() {
     [523.25, 659.25, 783.99, 1046.50].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.09, 'square', 0.06), idx * 50);
+    });
+  }
+
+  function playDebuffSfx() {
+    if (muted) return;
+    [340, 260, 180, 110].forEach((f, idx) => {
+      setTimeout(() => playTone(f, 0.14, 'sawtooth', 0.12, f * 0.7), idx * 75);
     });
   }
 
@@ -1510,6 +1640,7 @@
         b.x <= paddle.x + pw + b.r) {
       
       combo = 1; // reset combo on paddle touch
+      fireballStreak = 0;
       const hit = (b.x - (paddle.x + pw / 2)) / (pw / 2);
 
       if (effects.catch > 0) {
@@ -1567,6 +1698,17 @@
     
     // Track stats
     stats.bricksSmashed++;
+    if (stats.bricksSmashed >= 1000) {
+      unlockAchievement('brick1000');
+    }
+
+    // Track fireball streak
+    if (effects.fire > 0) {
+      fireballStreak++;
+      if (fireballStreak >= 12) {
+        unlockAchievement('inferno');
+      }
+    }
     
     // Track laser hits
     if (ballOrLaser && ballOrLaser.vy && effects.laser > 0) {
@@ -1741,6 +1883,37 @@
     powerupPool.update(dt, step);
     laserPool.update(dt);
 
+    // Endless Mode Live Mutator Updates
+    if (isEndlessMode && currentMutator && state === STATE.PLAYING) {
+      if (currentMutator.id === 'falling_sky') {
+        // Slowly descend active bricks (approx 2.4 px/sec)
+        const dropSpeed = 0.04 * step;
+        let maxBrickY = 0;
+        for (const b of bricks) {
+          if (b.alive && b.y + b.h > maxBrickY) {
+            maxBrickY = b.y + b.h;
+          }
+        }
+        // Descend only if lowest brick has at least 50px buffer above paddle
+        if (maxBrickY < paddle.y - 50) {
+          for (const b of bricks) {
+            if (b.alive) {
+              b.y += dropSpeed;
+            }
+          }
+        }
+      } else if (currentMutator.id === 'shifting_horizon') {
+        // Smooth horizontal row sway
+        const tSec = performance.now() * 0.002;
+        for (const b of bricks) {
+          if (b.alive) {
+            const sway = Math.sin(tSec + b.r * 0.8) * 16;
+            b.x = Math.max(8, Math.min(W - b.w - 8, b.baseX + sway));
+          }
+        }
+      }
+    }
+
     // Lasers
     handleLasers();
 
@@ -1813,6 +1986,9 @@
     // Level Clear / Win Check
     if (bricks.every(x => !x.alive || x.type === 'metal')) {
       updateHighScore();
+      if (levelPowerupsCount === 0) {
+        unlockAchievement('purist');
+      }
       if (level === 8 && !isEndlessMode) {
         unlockAchievement('clear8');
         state = STATE.WIN;
@@ -1873,19 +2049,26 @@
       ctx.fillRect(paddle.x + pw - 3, paddle.y - 10, 4, 4);
     }
 
-    // Sticky magnetic glow if active
-    if (THEMES[currentTheme].useGlow) {
+    // Sticky magnetic glow or Joker Reverse danger aura if active
+    const isReversed = effects.confuse > 0;
+    if (isReversed) {
+      const pulse = (Math.sin(Date.now() * 0.015) + 1) / 2;
+      ctx.shadowColor = '#ff0055';
+      ctx.shadowBlur = 14 + pulse * 10;
+    } else if (THEMES[currentTheme].useGlow) {
       if (effects.catch > 0) {
         ctx.shadowColor = '#b366ff';
-        ctx.shadowBlur = 12;
-      } else if (effects.confuse > 0) {
-        ctx.shadowColor = '#aa00ff';
         ctx.shadowBlur = 12;
       }
     }
 
     const g = ctx.createLinearGradient(paddle.x, 0, paddle.x + pw, 0);
-    if (effects.laser > 0) {
+    if (isReversed) {
+      const pulse = (Math.sin(Date.now() * 0.02) + 1) / 2;
+      g.addColorStop(0, '#ff0055');
+      g.addColorStop(0.5, pulse > 0.5 ? '#ffe66d' : '#8800ff');
+      g.addColorStop(1, '#ff0055');
+    } else if (effects.laser > 0) {
       g.addColorStop(0, '#ff3355'); g.addColorStop(1, '#ff9900');
     } else if (effects.wide > 0) {
       g.addColorStop(0, '#ff4d8d'); g.addColorStop(1, '#ffe66d');
@@ -1903,10 +2086,22 @@
     ctx.fillStyle = g;
     ctx.fill();
 
-    // Top highlight bevel
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    roundRect(paddle.x + 3, paddle.y + 2, pw - 6, 3, 2);
-    ctx.fill();
+    if (isReversed) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Reverse indicator arrows on paddle
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('◄  REVERSED  ►', paddle.x + pw / 2, paddle.y + 10);
+    } else {
+      // Top highlight bevel
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      roundRect(paddle.x + 3, paddle.y + 2, pw - 6, 3, 2);
+      ctx.fill();
+    }
 
     ctx.shadowBlur = 0;
   }
@@ -2126,19 +2321,26 @@
     ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.fillText(modePrefix, W - 12 - lvlWidth - 4, 17);
 
+    if (isEndlessMode && currentMutator) {
+      ctx.fillStyle = '#ffe66d';
+      ctx.font = 'bold 8px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(currentMutator.name.toUpperCase(), W - 12, 32);
+    }
+
     // 5. Active Power-Up Timers with countdown pill badges
     const activeEffects = [];
     if (effects.wide > 0) activeEffects.push({ name: 'WIDE', time: effects.wide, max: 12000, color: POWERUPS.WIDE.color });
-    if (effects.tiny > 0) activeEffects.push({ name: 'TINY', time: effects.tiny, max: 10000, color: POWERUPS.TINY.color });
+    if (effects.tiny > 0) activeEffects.push({ name: 'TINY', time: effects.tiny, max: 10000, color: POWERUPS.TINY.color, isDanger: true });
     if (effects.slow > 0) activeEffects.push({ name: 'SLOW', time: effects.slow, max: 9000, color: POWERUPS.SLOW.color });
     if (effects.fast > 0) activeEffects.push({ name: 'FAST', time: effects.fast, max: 8000, color: POWERUPS.FAST.color });
     if (effects.laser > 0) activeEffects.push({ name: 'LASER', time: effects.laser, max: 10000, color: POWERUPS.LASER.color });
     if (effects.fire > 0) activeEffects.push({ name: 'FIRE', time: effects.fire, max: 8000, color: POWERUPS.FIRE.color });
     if (effects.catch > 0) activeEffects.push({ name: 'CATCH', time: effects.catch, max: 12000, color: POWERUPS.CATCH.color });
-    if (effects.confuse > 0) activeEffects.push({ name: 'REVERSE', time: effects.confuse, max: 6000, color: POWERUPS.CONFUSE.color });
+    if (effects.confuse > 0) activeEffects.push({ name: '⚠️ REVERSE', time: effects.confuse, max: 6000, color: '#ff0055', isDanger: true });
 
     if (activeEffects.length > 0) {
-      const badgeW = 68, badgeH = 15, gap = 6;
+      const badgeW = 74, badgeH = 15, gap = 6;
       const totalW = activeEffects.length * (badgeW + gap) - gap;
       let badgeX = Math.max(12, Math.min(W - totalW - 12, (W - totalW) / 2));
       const badgeY = 23;
@@ -2152,15 +2354,21 @@
         roundRect(badgeX, badgeY, badgeW, badgeH, 4);
         ctx.fill();
 
+        if (eff.isDanger) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
         // Underline progress bar
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fillRect(badgeX, badgeY + badgeH - 3, badgeW, 3);
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = eff.isDanger ? '#ffe66d' : '#ffffff';
         ctx.fillRect(badgeX, badgeY + badgeH - 3, badgeW * remRatio, 3);
 
         // Badge text
-        ctx.fillStyle = '#04121a';
-        ctx.font = 'bold 9px system-ui, sans-serif';
+        ctx.fillStyle = eff.isDanger ? '#ffffff' : '#04121a';
+        ctx.font = 'bold 8.5px system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(`${eff.name} ${remSec}s`, badgeX + badgeW / 2, badgeY + 11);
 
@@ -2204,56 +2412,79 @@
   }
 
   function drawHelpScreen() {
-    ctx.fillStyle = 'rgba(7,10,20,0.92)';
+    ctx.fillStyle = 'rgba(7,10,20,0.94)';
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = 'center';
     ctx.fillStyle = '#38f9d7';
-    ctx.font = 'bold 28px system-ui, sans-serif';
-    ctx.fillText('HOW TO PLAY', W / 2, 60);
+    ctx.font = 'bold 24px system-ui, sans-serif';
+    ctx.fillText('HOW TO PLAY & GUIDE', W / 2, 38);
 
     ctx.textAlign = 'left';
     ctx.fillStyle = '#e6f1ff';
-    ctx.font = '13px system-ui, sans-serif';
-    const lines = [
-      'Controls:',
-      '  Mouse / Touch / A / D - Move Paddle',
-      '  Space / Tap - Launch ball, Fire Lasers, Release catch',
-      '  P - Pause    B - Music Track    M - Mute    H - Guide',
-      '',
-      'Power-Up Items (Catch with paddle):'
-    ];
-    let y = 95;
-    for (const ln of lines) { ctx.fillText(ln, 40, y); y += 20; }
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('Controls: Mouse / Touch / A / D Move • Space / Tap Launch / Shoot • P: Pause • H: Guide', 30, 60);
 
-    y += 5;
-    const miniKeys = POWERUP_KEYS.slice(0, 8); // positive powerups
-    for (const k of miniKeys) {
+    let y = 82;
+    ctx.fillStyle = '#38f9d7';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('BONUS POWER-UPS (Catch with paddle):', 30, y);
+    y += 14;
+
+    const positiveKeys = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative);
+    for (const k of positiveKeys) {
       const p = POWERUPS[k];
       ctx.fillStyle = p.color;
-      roundRect(40, y, 54, 22, 5);
+      roundRect(30, y, 36, 17, 4);
       ctx.fill();
       ctx.fillStyle = '#04121a';
       ctx.font = 'bold 10px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(p.label, 67, y + 14);
+      ctx.fillText(p.label, 48, y + 12);
       ctx.textAlign = 'left';
       ctx.fillStyle = '#e6f1ff';
-      ctx.font = '12px system-ui, sans-serif';
-      ctx.fillText(p.desc, 105, y + 15);
-      y += 26;
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillText(p.desc, 76, y + 12);
+      y += 21;
+    }
+
+    y += 8;
+    ctx.fillStyle = '#ff4d6d';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('⚠️ HAZARDS & THE JOKER (AVOID!):', 30, y);
+    y += 14;
+
+    const hazardKeys = ['CONFUSE', 'TINY', 'FAST'];
+    for (const k of hazardKeys) {
+      const p = POWERUPS[k];
+      const isJoker = k === 'CONFUSE';
+      ctx.fillStyle = p.color;
+      roundRect(30, y, 36, 17, 4);
+      ctx.fill();
+      if (isJoker) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.fillStyle = isJoker ? '#ffffff' : '#04121a';
+      ctx.font = isJoker ? 'bold 11px system-ui, sans-serif' : 'bold 10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(p.label, 48, y + 12);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = isJoker ? '#ff99aa' : '#e6f1ff';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillText(p.desc, 76, y + 12);
+      y += 21;
     }
 
     y += 10;
     ctx.fillStyle = '#ffe66d';
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText('Tip: Chain consecutive brick hits without paddle touch to build', 40, y);
-    y += 16;
-    ctx.fillText('massive Combo Multipliers (x2, x3, x4...)!', 40, y);
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText('Tip: Chain consecutive brick hits without paddle touch to build combo multipliers!', 30, y);
 
     ctx.textAlign = 'center';
     ctx.fillStyle = '#38f9d7';
-    ctx.font = 'bold 14px system-ui, sans-serif';
-    ctx.fillText('Press H, Space, or Click to return', W / 2, H - 24);
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText('Press H, Space, or Click to return', W / 2, H - 18);
   }
 
   function draw() {
@@ -2579,28 +2810,32 @@
 
   function generateEndlessLayout() {
     const map = [];
-    const patterns = ['checker', 'stripes', 'solid', 'random-gaps', 'falling-sky'];
-    const pat = patterns[Math.floor(Math.random() * patterns.length)];
-    const hpMax = Math.min(5, Math.floor((level - 8) / 2) + 1);
+    const mutatorIdx = (level - 9) % ENDLESS_MUTATORS.length;
+    currentMutator = ENDLESS_MUTATORS[mutatorIdx];
+    const pat = currentMutator.id;
+    const hpMax = (pat === 'armored') 
+      ? Math.min(5, Math.floor((level - 8) / 2) + 2) 
+      : Math.min(5, Math.floor((level - 8) / 2) + 1);
     
     for (let r = 0; r < ROWS; r++) {
       let rowStr = "";
       for (let c = 0; c < COLS; c++) {
-        if (pat === 'checker' && (r + c) % 2 === 0) {
+        if (pat === 'checkerboard' && (r + c) % 2 === 0) {
           rowStr += ".";
           continue;
         }
-        if (pat === 'stripes' && c % 2 === 0) {
+        if (pat === 'shifting_horizon' && (r % 2 === 1 && c % 3 === 0)) {
           rowStr += ".";
           continue;
         }
-        if (pat === 'random-gaps' && Math.random() < 0.25 && r > 0 && r < ROWS - 1) {
+        if (pat === 'falling_sky' && r >= 6) {
+          // Top 6 rows leaving room to descend
           rowStr += ".";
           continue;
         }
         
         const rand = Math.random();
-        if (rand < 0.08) {
+        if (rand < (pat === 'armored' ? 0.14 : 0.08)) {
           rowStr += "M";
         } else if (rand < 0.16) {
           rowStr += "E";
@@ -2620,6 +2855,7 @@
     bricks = [];
     let map;
     if (level <= 8 && !isEndlessMode) {
+      currentMutator = null;
       map = LEVEL_MAPS[level - 1];
     } else {
       map = generateEndlessLayout();
@@ -2657,7 +2893,7 @@
           if (hp >= 3) color = '#ff3366';
         }
         
-        bricks.push({ r, c, x, y, w: BRICK_W, h: BRICK_H, alive: true, type, hp, maxHp: hp, color });
+        bricks.push({ r, c, x, y, baseX: x, baseY: y, w: BRICK_W, h: BRICK_H, alive: true, type, hp, maxHp: hp, color });
       }
     }
   }
@@ -2678,6 +2914,8 @@
     stats.gamesPlayed++;
     livesLostThisLevel = 0;
     laserBricksDestroyed = 0;
+    levelPowerupsCount = 0;
+    fireballStreak = 0;
     
     score = 0; lives = 3; combo = 1;
     paddle.baseWidth = PADDLE_BASE_W;
@@ -2695,8 +2933,8 @@
     state = STATE.READY;
     
     showGamePromptOverlay(
-      isEndlessMode ? 'LEVEL ' + level + ' (ENDLESS)' : 'LEVEL ' + level,
-      isEndlessMode ? 'Survive endless layouts with rising speeds!' : 'Smash every brick, catch falling powerups!',
+      isEndlessMode ? `WAVE ${level} • ${currentMutator.name.toUpperCase()}` : 'LEVEL ' + level,
+      isEndlessMode ? `Mutator: ${currentMutator.desc}` : 'Smash every brick, catch falling powerups!',
       'Launch Ball',
       '',
       false,
@@ -2718,6 +2956,8 @@
     }
     
     livesLostThisLevel = 0;
+    levelPowerupsCount = 0;
+    fireballStreak = 0;
     paddle.baseWidth = Math.max(60, paddle.baseWidth - 4);
     effects = { wide: 0, slow: 0, laser: 0, fire: 0, catch: 0, tiny: 0, fast: 0, confuse: 0, shield: false };
     
@@ -2729,8 +2969,8 @@
     playLevelClearFanfare();
     
     showGamePromptOverlay(
-      isEndlessMode ? 'LEVEL ' + level + ' (ENDLESS)' : 'LEVEL ' + level,
-      'Speed increasing to ' + getLevelSpeed().toFixed(1),
+      isEndlessMode ? `WAVE ${level} • ${currentMutator.name.toUpperCase()}` : 'LEVEL ' + level,
+      isEndlessMode ? `Mutator: ${currentMutator.desc}` : 'Speed increasing to ' + getLevelSpeed().toFixed(1),
       'Continue',
       `Score: ${score} &bull; Hi-Score: ${highScore}`
     );
@@ -2766,6 +3006,9 @@
 
   function launchBall() {
     overlay.classList.add('hidden');
+    if (isEndlessMode && currentMutator) {
+      setMsg(currentMutator.name.toUpperCase());
+    }
     if (stuckBall) {
       const sp = getLevelSpeed();
       const angle = (-Math.PI / 2) + (Math.random() * 0.5 - 0.25);
@@ -2796,14 +3039,19 @@
       }
     }
     balls.push(...newBalls);
-    if (balls.length >= 5) unlockAchievement('chaos8');
+    if (balls.length >= 8) unlockAchievement('chaos8');
   }
 
   function setMsg(t) { msg = t; msgTime = 1600; }
 
   function activatePowerup(type) {
     levelPowerupsCount++;
-    playPowerupJingle();
+    const isNegative = POWERUPS[type]?.isNegative;
+    if (isNegative) {
+      playDebuffSfx();
+    } else {
+      playPowerupJingle();
+    }
     switch (type) {
       case 'WIDE':
         effects.tiny = 0;
@@ -2814,6 +3062,8 @@
         effects.wide = 0;
         effects.tiny = 10000;
         setMsg('NARROW PADDLE!');
+        triggerShake(3, 100);
+        floatingTextPool.spawn('NARROW PADDLE!', paddle.x + currentPaddleWidth() / 2, paddle.y - 15, '#ff3333');
         break;
       case 'SLOW':
         effects.fast = 0;
@@ -2824,15 +3074,24 @@
         effects.slow = 0;
         effects.fast = 8000;
         setMsg('FAST BALL!');
+        triggerShake(3, 100);
+        floatingTextPool.spawn('FAST BALL!', paddle.x + currentPaddleWidth() / 2, paddle.y - 15, '#ccff00');
         break;
       case 'MULTI':
         doMulti();
         setMsg('MULTI-BALL!');
         break;
       case 'LIFE':
-        lives++;
-        setMsg('EXTRA LIFE!');
-        floatingTextPool.spawn('+1 LIFE', paddle.x + currentPaddleWidth() / 2, paddle.y - 15, '#ff4d8d');
+        if (lives < 5) {
+          lives++;
+          setMsg(`EXTRA LIFE! (${lives}/5)`);
+          floatingTextPool.spawn('+1 LIFE', paddle.x + currentPaddleWidth() / 2, paddle.y - 15, '#ff4d8d');
+        } else {
+          score += 500;
+          updateHighScore();
+          setMsg('+500 BONUS (MAX LIVES)');
+          floatingTextPool.spawn('+500 (MAX LIVES)', paddle.x + currentPaddleWidth() / 2, paddle.y - 15, '#ffd166');
+        }
         break;
       case 'LASER':
         effects.laser = 10000;
@@ -2852,20 +3111,30 @@
         break;
       case 'CONFUSE':
         effects.confuse = 6000;
-        setMsg('REVERSED CONTROLS!');
+        setMsg('⚠️ REVERSED CONTROLS! ⚠️');
+        triggerShake(5, 180);
+        floatingTextPool.spawn('⚠️ REVERSED CONTROLS!', paddle.x + currentPaddleWidth() / 2, paddle.y - 20, '#ff0055');
         break;
     }
   }
 
   function maybeDropPowerup(x, y) {
     if (Math.random() < 0.18) {
-      const positives = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative && (k !== 'LIFE' || lives < 3));
-      const negatives = POWERUP_KEYS.filter(k => POWERUPS[k].isNegative);
-      // 80% positive, 20% negative
-      const type = Math.random() < 0.8 
-        ? positives[Math.floor(Math.random() * positives.length)]
-        : negatives[Math.floor(Math.random() * negatives.length)];
-      powerupPool.spawn(x, y, POWERUP_VY, type);
+      let chosenType;
+      if (Math.random() < 0.8) {
+        // 80% positive powerups
+        if (lives < 5 && Math.random() < 0.08) {
+          chosenType = 'LIFE'; // rare special drop
+        } else {
+          const nonLifePositives = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative && k !== 'LIFE');
+          chosenType = nonLifePositives[Math.floor(Math.random() * nonLifePositives.length)];
+        }
+      } else {
+        // 20% negative hazard
+        const negatives = POWERUP_KEYS.filter(k => POWERUPS[k].isNegative);
+        chosenType = negatives[Math.floor(Math.random() * negatives.length)];
+      }
+      powerupPool.spawn(x, y, POWERUP_VY, chosenType);
     }
   }
 
@@ -2883,11 +3152,24 @@
 
   function updateMuteUI() {
     muteBtn.textContent = muted ? '🔇' : '🔊';
-    if (audioCtx && musicGainNode) {
-      const targetVol = (muted || currentMusic === 'off') ? 0.0001 : (state === STATE.MENU ? 0.07 : 0.11);
-      musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-      musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+    if (audioCtx) {
+      if (masterGainNode) {
+        masterGainNode.gain.setValueAtTime(muted ? 0.0001 : 1.0, audioCtx.currentTime);
+      }
+      if (muted || currentMusic === 'off') {
+        stopMusicEngine();
+        if (musicGainNode) {
+          musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+        }
+      } else {
+        startMusicEngine();
+        if (musicGainNode) {
+          const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
+          musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+          musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+        }
+      }
     }
   }
 

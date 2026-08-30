@@ -68,12 +68,12 @@ When a brick shatters, there is an **18% chance** it drops a capsule. Watch out 
 | `CATCH` | Sticky Paddle | Magnetically catches the ball (Space/Click to release) | 🟪 Purple | ~12 s |
 | `SHIELD` | Screen Shield | Places a safety bounce line at the screen bottom | 💎 Cyan | Until hit |
 
-### Negative Power-Downs
+### Negative Hazards & The Joker
 | Icon | Name | Effect | Color | Duration |
 |:---:|---|---|---|---|
 | `TINY` | Narrow Paddle | Narrows the paddle to a tiny width (cancels `WIDE`) | 🟥 Dark Red | ~10 s |
 | `FAST` | Fast Ball | Speeds up the ball by `1.45x` | 🟨 Green-Yellow | ~8 s |
-| `CONFUSE` | Reversed | Inverts left/right arrow keys & pointer movement | 🟪 Deep Purple | ~6 s |
+| `⇄` (`CONFUSE`) | **The Joker (Reversed)** | **Hazard!** Inverts left/right arrow keys & pointer movement (Pulsing Danger Beacon) | 🚨 Crimson Red `#ff0055` | ~6 s |
 
 ---
 
@@ -124,6 +124,7 @@ Then load **[http://localhost:8000/breakout.html](http://localhost:8000/breakout
 
 | File | Purpose |
 |------|---------|
+| [`index.html`](./index.html)    | GitHub Pages root redirect entrypoint to launch `breakout.html`. |
 | [`breakout.html`](./breakout.html) | The complete standalone game (HTML + CSS + Canvas + Synth in one file). |
 | [`README.md`](./README.md)      | Project documentation and highlights. |
 | [`GUIDE.md`](./GUIDE.md)       | Deep strategic guide, advanced level charts, and combo scoring. |

@@ -58,9 +58,9 @@ When a brick shatters, there is an **18% chance** it drops a capsule. `+1 LIFE` 
 | **LASER** | 🔴 `#ff3355` | ~10 s | Mounts twin blasters. Press `Space` / `Tap` repeatedly to snipe bricks from safety! |
 | **FIRE** | 🟧 `#ff7700` | ~8 s | Inferno Comet! Plows straight through single-hit bricks without bouncing off them. |
 | **CATCH** | 🟪 `#b366ff` | ~12 s | Magnetic Paddle. Catches the ball on contact. Line up your shot and press `Space` to launch! |
-| **TINY** | 🔻 `#a29bfe` | ~8 s | **Hazard!** Shrinks your paddle. Collecting `WIDE` will cancel it. |
-| **FAST** | ⚡ `#f1c40f` | ~8 s | **Hazard!** Boosts ball speed by 1.45x. |
-| **CONFUSE** | 🌀 `#ff007f` | ~6 s | **Hazard!** Inverts paddle movement direction. Stay focused! |
+| **TINY** | 🔻 `#ff3333` | ~10 s | **Hazard!** Shrinks your paddle. Collecting `WIDE` will cancel it. |
+| **FAST** | ⚡ `#ccff00` | ~8 s | **Hazard!** Boosts ball speed by 1.45x. |
+| **CONFUSE** | ⇄ ⚠️ `#ff0055` | ~6 s | **The Joker Hazard (AVOID!)** Inverts paddle movement direction. Highlighted with pulsing danger beacon & warning aura. |
 
 ---
 
