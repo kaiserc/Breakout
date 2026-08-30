@@ -230,37 +230,56 @@
     box-shadow: none;
   }
   
-  .theme-select-wrap {
+  .theme-select-wrap, .music-select-wrap {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 6px;
   }
-  .theme-label {
-    font-size: 12px;
+  .theme-label, .music-label {
+    font-size: 11px;
     font-weight: bold;
-    opacity: 0.7;
+    opacity: 0.75;
+    min-width: 42px;
+    text-align: right;
   }
-  .theme-options {
+  .theme-options, .music-options {
     display: flex;
-    gap: 5px;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
-  .theme-btn {
-    padding: 5px 10px;
+  .theme-btn, .music-btn {
+    padding: 4px 8px;
     font-size: 10px;
     border-radius: 12px;
     cursor: pointer;
     box-shadow: none;
     font-weight: bold;
-    transition: transform 0.2s, opacity 0.2s;
+    transition: transform 0.15s, opacity 0.2s, border-color 0.2s, box-shadow 0.2s;
   }
-  .theme-btn:hover { transform: translateY(-1px); }
+  .music-btn {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .theme-btn:hover, .music-btn:hover { transform: translateY(-1px); }
   .theme-btn.active {
     box-shadow: 0 0 8px currentColor;
     opacity: 1;
   }
   .theme-btn:not(.active) {
     opacity: 0.4;
+  }
+  .music-btn.active {
+    box-shadow: 0 0 10px rgba(56, 249, 215, 0.5);
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(56, 249, 215, 0.12);
+    opacity: 1;
+  }
+  .music-btn:not(.active) {
+    opacity: 0.5;
   }
   .personal-best {
     font-size: 12px;
@@ -467,6 +486,7 @@
       <div class="game-header">
         <div class="game-title" id="gameTitle">BREAKOUT</div>
         <div class="top-controls">
+          <button class="icon-btn" id="musicBtn" title="Music: Neon Drive (B)">🎵</button>
           <button class="icon-btn" id="pauseBtn" title="Pause Game (P)">⏸</button>
           <button class="icon-btn" id="muteBtn" title="Toggle Sound (M)">🔊</button>
           <button class="icon-btn" id="fullscreenBtn" title="Toggle Fullscreen">⛶</button>
@@ -492,6 +512,16 @@
               <button class="theme-btn" data-theme="matrix" style="background:#020d04; color:#00ff46; border:1px solid #00ff46;">Matrix</button>
               <button class="theme-btn" data-theme="sunset" style="background:#1a0933; color:#ff7700; border:1px solid #ff7700;">Sunset</button>
               <button class="theme-btn" data-theme="classic" style="background:#111; color:#fff; border:1px solid #fff;">Retro</button>
+            </div>
+          </div>
+          <div class="music-select-wrap">
+            <span class="music-label">Music:</span>
+            <div class="music-options">
+              <button class="music-btn active" data-music="synthwave" title="Neon Drive (120 BPM Synthwave)">Neon</button>
+              <button class="music-btn" data-music="chiptune" title="8-Bit Pulse (136 BPM Chiptune)">8-Bit</button>
+              <button class="music-btn" data-music="ambient" title="Deep Cosmos (Space Ambient)">Cosmos</button>
+              <button class="music-btn" data-music="cyber" title="Cyber Rush (142 BPM Acid Synth)">Cyber</button>
+              <button class="music-btn" data-music="off" title="Music Off (SFX Only)">Off</button>
             </div>
           </div>
           <div class="personal-best" id="pbMain">Personal Best: 0</div>
@@ -547,6 +577,7 @@
       <span><b>Mouse / Touch / ← →</b> move</span>
       <span><b>Space / Tap</b> launch &bull; laser &bull; release</span>
       <span><b>P</b> pause</span>
+      <span><b>B</b> music</span>
       <span><b>M</b> mute</span>
       <span><b>H</b> guide</span>
     </div>
@@ -926,27 +957,414 @@
 
         ctx.fillStyle = '#04121a';
         ctx.font = 'bold 12px system-ui, sans-serif';
-        ctx.textAlign = 'center';
         ctx.fillText(POWERUPS[p.type].label, p.x, p.y + 4);
       }
     }
   };
 
-  // ---- WebAudio Procedural Synthesizer ----
+  // ---- WebAudio Procedural Synthesizer & Music Engine ----
   let audioCtx = null;
   let muted = false;
   try {
     muted = localStorage.getItem('breakout_muted') === 'true';
   } catch (e) {}
+
+  let currentMusic = localStorage.getItem('breakout_music_style') || 'synthwave';
+  const MUSIC_TRACKS = {
+    synthwave: { name: 'Neon Drive', icon: '🌆', bpm: 120 },
+    chiptune:  { name: '8-Bit Pulse', icon: '👾', bpm: 136 },
+    ambient:   { name: 'Deep Cosmos', icon: '🌌', bpm: 76 },
+    cyber:     { name: 'Cyber Rush', icon: '⚡', bpm: 142 },
+    off:       { name: 'Music Off',  icon: '🔇', bpm: 0 }
+  };
+  const MUSIC_KEYS = ['synthwave', 'chiptune', 'ambient', 'cyber', 'off'];
+  if (!MUSIC_TRACKS[currentMusic]) currentMusic = 'synthwave';
+
+  let musicGainNode = null;
+  let sharedNoiseBuffer = null;
+  let musicStep = 0;
+  let nextStepTime = 0;
+  let musicSchedulerTimer = null;
+
   const PENTATONIC = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
 
   function initAudio() {
     try {
-      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Music Master Gain Node
+        musicGainNode = audioCtx.createGain();
+        musicGainNode.gain.setValueAtTime(muted || currentMusic === 'off' ? 0.0001 : 0.11, audioCtx.currentTime);
+        musicGainNode.connect(audioCtx.destination);
+
+        // Pre-create 1-second white noise buffer for percussions & shatter SFX
+        const sr = audioCtx.sampleRate || 44100;
+        sharedNoiseBuffer = audioCtx.createBuffer(1, sr, sr);
+        const d = sharedNoiseBuffer.getChannelData(0);
+        for (let i = 0; i < sr; i++) {
+          d[i] = Math.random() * 2 - 1;
+        }
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      startMusicEngine();
     } catch (e) {}
   }
 
+  function startMusicEngine() {
+    if (!audioCtx || musicSchedulerTimer) return;
+    nextStepTime = audioCtx.currentTime + 0.05;
+    musicStep = 0;
+    musicSchedulerTimer = setInterval(musicSchedulerTick, 25);
+  }
+
+  function updateMusicUI() {
+    const musicBtn = document.getElementById('musicBtn');
+    if (musicBtn) {
+      const track = MUSIC_TRACKS[currentMusic] || MUSIC_TRACKS.synthwave;
+      musicBtn.title = `Music: ${track.name} (B)`;
+      musicBtn.textContent = currentMusic === 'off' ? '🎵' : '🎶';
+    }
+
+    document.querySelectorAll('.music-btn').forEach(btn => {
+      if (btn.dataset.music === currentMusic) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  function setMusicTrack(trackId, announce = false) {
+    if (!MUSIC_TRACKS[trackId]) return;
+    currentMusic = trackId;
+    try {
+      localStorage.setItem('breakout_music_style', currentMusic);
+    } catch (e) {}
+
+    musicStep = 0;
+    if (audioCtx) {
+      nextStepTime = audioCtx.currentTime + 0.05;
+      if (musicGainNode) {
+        const targetVol = (muted || currentMusic === 'off') ? 0.0001 : (state === STATE.MENU ? 0.07 : 0.11);
+        musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+        musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+      }
+    }
+    updateMusicUI();
+
+    if (announce && (state === STATE.PLAYING || state === STATE.READY)) {
+      const track = MUSIC_TRACKS[currentMusic];
+      setMsg(`MUSIC: ${track.name.toUpperCase()}`);
+    }
+  }
+
+  function cycleMusicTrack(announce = true) {
+    const currentIndex = MUSIC_KEYS.indexOf(currentMusic);
+    const nextIndex = (currentIndex + 1) % MUSIC_KEYS.length;
+    setMusicTrack(MUSIC_KEYS[nextIndex], announce);
+  }
+
+  // ---- Procedural Instruments ----
+  function playSynthBass(freq, time, dur, type = 'sawtooth', cutoff = 550, vol = 0.15) {
+    if (!audioCtx || muted || currentMusic === 'off' || !musicGainNode) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const filter = audioCtx.createBiquadFilter();
+      const gain = audioCtx.createGain();
+
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, time);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(cutoff * 2.2, time);
+      filter.frequency.exponentialRampToValueAtTime(Math.max(40, cutoff * 0.6), time + dur);
+      filter.Q.setValueAtTime(3.0, time);
+
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(musicGainNode);
+
+      osc.start(time);
+      osc.stop(time + dur + 0.02);
+    } catch (e) {}
+  }
+
+  function playSynthLead(freq, time, dur, type = 'triangle', vol = 0.09, vibrato = false) {
+    if (!audioCtx || muted || currentMusic === 'off' || !musicGainNode) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, time);
+
+      if (vibrato) {
+        osc.frequency.setValueAtTime(freq, time + dur * 0.25);
+        osc.frequency.linearRampToValueAtTime(freq * 1.015, time + dur * 0.55);
+        osc.frequency.linearRampToValueAtTime(freq * 0.985, time + dur);
+      }
+
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+      osc.connect(gain);
+      gain.connect(musicGainNode);
+
+      osc.start(time);
+      osc.stop(time + dur + 0.02);
+    } catch (e) {}
+  }
+
+  function playSynthPad(freqs, time, dur, vol = 0.06) {
+    if (!audioCtx || muted || currentMusic === 'off' || !musicGainNode) return;
+    try {
+      freqs.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = (idx % 2 === 0) ? 'sine' : 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.detune.setValueAtTime((idx - 1) * 6, time);
+
+        gain.gain.setValueAtTime(0.0001, time);
+        gain.gain.linearRampToValueAtTime(vol / freqs.length, time + 0.35);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+        osc.connect(gain);
+        gain.connect(musicGainNode);
+
+        osc.start(time);
+        osc.stop(time + dur + 0.05);
+      });
+    } catch (e) {}
+  }
+
+  function playSynthKick(time, vol = 0.18) {
+    if (!audioCtx || muted || currentMusic === 'off' || !musicGainNode) return;
+    try {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(135, time);
+      osc.frequency.exponentialRampToValueAtTime(34, time + 0.08);
+
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.08);
+
+      osc.connect(gain);
+      gain.connect(musicGainNode);
+
+      osc.start(time);
+      osc.stop(time + 0.09);
+    } catch (e) {}
+  }
+
+  function playSynthHat(time, dur = 0.03, vol = 0.035) {
+    if (!audioCtx || muted || currentMusic === 'off' || !sharedNoiseBuffer || !musicGainNode) return;
+    try {
+      const src = audioCtx.createBufferSource();
+      src.buffer = sharedNoiseBuffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(7500, time);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(musicGainNode);
+
+      src.start(time);
+      src.stop(time + dur + 0.01);
+    } catch (e) {}
+  }
+
+  function playSynthSnare(time, vol = 0.075) {
+    if (!audioCtx || muted || currentMusic === 'off' || !sharedNoiseBuffer || !musicGainNode) return;
+    try {
+      const src = audioCtx.createBufferSource();
+      src.buffer = sharedNoiseBuffer;
+
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2400, time);
+      filter.Q.setValueAtTime(1.6, time);
+
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.075);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(musicGainNode);
+
+      src.start(time);
+      src.stop(time + 0.08);
+
+      // Body tone
+      const osc = audioCtx.createOscillator();
+      const oscGain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(175, time);
+      osc.frequency.exponentialRampToValueAtTime(75, time + 0.05);
+      oscGain.gain.setValueAtTime(vol * 0.7, time);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.05);
+
+      osc.connect(oscGain);
+      oscGain.connect(musicGainNode);
+      osc.start(time);
+      osc.stop(time + 0.06);
+    } catch (e) {}
+  }
+
+  // ---- Step Sequencer Clock ----
+  function musicSchedulerTick() {
+    if (!audioCtx || currentMusic === 'off' || muted) return;
+
+    const shouldPlay = (state === STATE.MENU || state === STATE.READY || state === STATE.PLAYING);
+    if (!shouldPlay) {
+      if (musicGainNode && musicGainNode.gain.value > 0.001) {
+        musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+        musicGainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+      }
+      return;
+    } else {
+      const targetVol = (state === STATE.MENU) ? 0.07 : 0.11;
+      if (musicGainNode && Math.abs(musicGainNode.gain.value - targetVol) > 0.02) {
+        musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+        musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.2);
+      }
+    }
+
+    const track = MUSIC_TRACKS[currentMusic];
+    if (!track || track.bpm <= 0) return;
+
+    const stepDur = (60 / track.bpm) / 4; // 16th note steps
+    const lookahead = 0.12;
+
+    while (nextStepTime < audioCtx.currentTime + lookahead) {
+      scheduleTrackStep(currentMusic, musicStep, nextStepTime, stepDur);
+      nextStepTime += stepDur;
+      musicStep = (musicStep + 1) % 64;
+    }
+  }
+
+  function scheduleTrackStep(trackId, step, time, stepDur) {
+    if (trackId === 'synthwave') {
+      const bar = Math.floor(step / 16);
+      const barStep = step % 16;
+
+      const chordRoots = [55.00 /*A1*/, 43.65 /*F1*/, 65.41 /*C2*/, 49.00 /*G1*/];
+      const chordArps = [
+        [220.00, 261.63, 329.63, 440.00, 523.25, 440.00, 329.63, 261.63], // Am
+        [174.61, 220.00, 261.63, 349.23, 440.00, 349.23, 261.63, 220.00], // F
+        [130.81, 164.81, 196.00, 261.63, 329.63, 261.63, 196.00, 164.81], // C
+        [196.00, 246.94, 293.66, 392.00, 493.88, 392.00, 293.66, 246.94]  // G
+      ];
+
+      // Bass on eighth notes
+      if (barStep % 2 === 0) {
+        playSynthBass(chordRoots[bar], time, stepDur * 1.5, 'sawtooth', 520, 0.14);
+      }
+
+      // Arp melody
+      const arpNotes = chordArps[bar];
+      const noteFreq = arpNotes[barStep % arpNotes.length];
+      playSynthLead(noteFreq, time, stepDur * 0.85, 'triangle', 0.085);
+
+      // Drums
+      if (barStep % 4 === 0) playSynthKick(time, 0.16);
+      if (barStep % 8 === 4) playSynthSnare(time, 0.07);
+      if (barStep % 2 === 1) playSynthHat(time, 0.025, 0.03);
+
+    } else if (trackId === 'chiptune') {
+      const bar = Math.floor(step / 16);
+      const barStep = step % 16;
+
+      const melSeq = [
+        523.25, 659.25, 783.99, 1046.50, 783.99, 659.25, 523.25, 659.25,
+        783.99, 1046.50, 1318.51, 1046.50, 783.99, 659.25, 783.99, 880.00,
+        440.00, 523.25, 659.25, 880.00, 659.25, 523.25, 440.00, 523.25,
+        659.25, 880.00, 1046.50, 880.00, 659.25, 523.25, 659.25, 783.99,
+        349.23, 440.00, 523.25, 698.46, 523.25, 440.00, 349.23, 440.00,
+        523.25, 698.46, 880.00, 698.46, 523.25, 440.00, 523.25, 659.25,
+        392.00, 493.88, 587.33, 783.99, 587.33, 493.88, 392.00, 493.88,
+        587.33, 783.99, 987.77, 783.99, 587.33, 493.88, 587.33, 523.25
+      ];
+      const bassRoots = [130.81, 110.00, 87.31, 98.00];
+
+      const leadFreq = melSeq[step % melSeq.length];
+      playSynthLead(leadFreq, time, stepDur * 0.72, 'square', 0.065, true);
+
+      if (barStep % 4 === 0) {
+        playSynthBass(bassRoots[bar], time, stepDur * 2.0, 'triangle', 700, 0.15);
+      }
+
+      if (barStep % 8 === 0) playSynthKick(time, 0.15);
+      if (barStep % 8 === 4) playSynthSnare(time, 0.065);
+      if (barStep % 2 === 1) playSynthHat(time, 0.02, 0.028);
+
+    } else if (trackId === 'ambient') {
+      const ambientStep = Math.floor(step / 2) % 32;
+      const bar = Math.floor(ambientStep / 8);
+      const barStep = ambientStep % 8;
+
+      if (step % 2 === 0) {
+        if (barStep === 0) {
+          const pads = [
+            [146.83, 174.61, 220.00, 261.63, 329.63], // Dm9
+            [116.54, 146.83, 174.61, 220.00, 293.66], // Bbmaj7
+            [87.31, 130.81, 174.61, 220.00, 392.00],  // Fsus2
+            [130.81, 196.00, 246.94, 293.66, 329.63]  // C9
+          ];
+          playSynthPad(pads[bar], time, stepDur * 16, 0.065);
+          const subs = [73.42, 58.27, 43.65, 65.41];
+          playSynthBass(subs[bar], time, stepDur * 14, 'sine', 220, 0.14);
+        }
+
+        if (barStep === 3 || barStep === 6) {
+          const chimes = [880.00, 1046.50, 1174.66, 1318.51, 1567.98];
+          const cf = chimes[(ambientStep * 3) % chimes.length];
+          playSynthLead(cf, time, stepDur * 3.5, 'sine', 0.045);
+        }
+      }
+
+    } else if (trackId === 'cyber') {
+      const bar = Math.floor(step / 16);
+      const barStep = step % 16;
+
+      const acidNotes = [
+        82.41, 82.41, 164.81, 82.41, 110.00, 82.41, 123.47, 82.41,
+        82.41, 164.81, 82.41, 146.83, 82.41, 123.47, 110.00, 98.00
+      ];
+
+      const acidFreq = (bar === 2) ? acidNotes[barStep] * 1.334 : acidNotes[barStep];
+      const isAccent = (barStep === 2 || barStep === 7 || barStep === 11 || barStep === 14);
+      playSynthBass(acidFreq, time, stepDur * (isAccent ? 1.4 : 0.8), 'sawtooth', isAccent ? 1100 : 480, isAccent ? 0.19 : 0.12);
+
+      if (barStep === 3 || barStep === 10) {
+        [329.63, 392.00, 493.88].forEach(f => {
+          playSynthLead(f, time, stepDur * 0.9, 'sawtooth', 0.055);
+        });
+      }
+
+      if (barStep % 4 === 0) playSynthKick(time, 0.20);
+      if (barStep % 8 === 4) playSynthSnare(time, 0.08);
+      if (barStep % 2 === 1) playSynthHat(time, 0.035, 0.04);
+    }
+  }
+
+  // ---- Sound FX Synthesizer ----
   function playTone(freq, dur = 0.08, type = 'sine', vol = 0.1, slideTo = null) {
     if (muted) return;
     try {
@@ -978,19 +1396,11 @@
     if (muted) return;
     try {
       initAudio();
-      if (!audioCtx) return;
+      if (!audioCtx || !sharedNoiseBuffer) return;
 
-      // 1. Subtle noise burst for crisp ceramic/glass shatter texture
       const dur = 0.045;
-      const bufferSize = Math.floor(audioCtx.sampleRate * dur);
-      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.22));
-      }
-
       const noise = audioCtx.createBufferSource();
-      noise.buffer = buffer;
+      noise.buffer = sharedNoiseBuffer;
 
       const filter = audioCtx.createBiquadFilter();
       filter.type = 'bandpass';
@@ -1005,8 +1415,9 @@
       filter.connect(gain);
       gain.connect(audioCtx.destination);
       noise.start();
+      noise.stop(audioCtx.currentTime + dur);
 
-      // 2. Micro pop chirp
+      // Micro pop chirp
       const osc = audioCtx.createOscillator();
       const oscGain = audioCtx.createGain();
       osc.type = 'triangle';
@@ -1045,7 +1456,7 @@
     });
   }
 
-    function playNewBestSfx() {
+  function playNewBestSfx() {
     if (muted) return;
     [523.25, 659.25, 783.99, 1046.50, 1318.51, 1567.98].forEach((f, i) => {
       setTimeout(() => playTone(f, 0.14, 'triangle', 0.15), i * 70);
@@ -1060,12 +1471,20 @@
   }
 
   function playLevelClearFanfare() {
+    if (audioCtx && musicGainNode) {
+      musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    }
     [523.25, 659.25, 783.99, 1046.50, 1318.51].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.18, 'triangle', 0.14), idx * 80);
     });
   }
 
   function playGameOverSfx() {
+    if (audioCtx && musicGainNode) {
+      musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    }
     [329.63, 293.66, 261.63, 196.00].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.22, 'sawtooth', 0.1), idx * 110);
     });
@@ -1799,7 +2218,7 @@
       'Controls:',
       '  Mouse / Touch / A / D - Move Paddle',
       '  Space / Tap - Launch ball, Fire Lasers, Release catch',
-      '  P - Pause    M - Toggle Mute    H - Toggle Guide',
+      '  P - Pause    B - Music Track    M - Mute    H - Guide',
       '',
       'Power-Up Items (Catch with paddle):'
     ];
@@ -1926,6 +2345,9 @@
         btn.classList.remove('active');
       }
     });
+
+    // Sync music button states
+    updateMusicUI();
     
     showView('main');
   }
@@ -2461,6 +2883,12 @@
 
   function updateMuteUI() {
     muteBtn.textContent = muted ? '🔇' : '🔊';
+    if (audioCtx && musicGainNode) {
+      const targetVol = (muted || currentMusic === 'off') ? 0.0001 : (state === STATE.MENU ? 0.07 : 0.11);
+      musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+      musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
+      musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+    }
   }
 
   function toggleMute() {
@@ -2544,6 +2972,15 @@
 
   document.getElementById('promptQuitBtn').addEventListener('click', showMainMenu);
 
+  const musicBtn = document.getElementById('musicBtn');
+  if (musicBtn) {
+    musicBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      cycleMusicTrack(true);
+    });
+  }
+
   muteBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMute(); });
   pauseBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePause(); });
   fullscreenBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
@@ -2566,6 +3003,15 @@
     });
   });
 
+  // Music system clicks
+  document.querySelectorAll('.music-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      setMusicTrack(btn.dataset.music, true);
+    });
+  });
+
   // ---- Input Listeners ----
   window.addEventListener('keydown', (e) => {
     initAudio();
@@ -2584,6 +3030,7 @@
       }
     }
     if (e.key === 'p' || e.key === 'P') togglePause();
+    if (e.key === 'b' || e.key === 'B') cycleMusicTrack(true);
     if (e.key === 'm' || e.key === 'M') toggleMute();
     if (e.key === 'h' || e.key === 'H') {
       if (state === STATE.HELP) closeHelp();
@@ -2674,6 +3121,7 @@
   // ---- Boot ----
   loadStats();
   updateMuteUI();
+  updateMusicUI();
   showMainMenu();
   loop(0);
 })();

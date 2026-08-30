@@ -34,10 +34,17 @@ A classic, highly polished **Breakout / Arkanoid** arcade clone built with vanil
   - **Emerald Matrix**: Green terminal style with falling digital Matrix code rain backgrounds.
   - **Sunset Wave**: Vaporwave orange, pink, and purple gradient theme.
   - **Classic Arcade**: Hard-edged pixel graphics and solid retro colors.
-- **Web Audio Procedural Synthesis**:
+- **Web Audio Procedural Music & Sound Synthesis (100% Zero-Dependency)**:
+  - **4 Selectable Procedural Synth BGM Tracks**:
+    - 🌆 **Neon Drive**: 120 BPM 80s synthwave arpeggios, filtered analog bassline & retro beat pulse.
+    - 👾 **8-Bit Pulse**: 136 BPM energetic chiptune counterpoint melody and retro noise percussion.
+    - 🌌 **Deep Cosmos**: 76 BPM lush space ambient pad drone with detuned chords and sub-bass resonance.
+    - ⚡ **Cyber Rush**: 142 BPM driving cyberpunk acid techno rhythm with syncopated bass stabs.
+    - 🔇 **Off**: Play with SFX only.
+  - In-game music selector in the Main Menu, top header `🎵` cycle button, and `B` key shortcut.
   - Harmonized pentatonic rows (higher bricks play higher notes) with dynamic combo chords.
   - Real-time synthesized laser blaster sound effects, power-up arpeggios, and fanfares.
-  - Persistent Mute state saved across sessions.
+  - Persistent Mute and Music style states saved across sessions.
 - **Engine Performance & Game Physics**:
   - **Object Pools** (`particlePool`, `laserPool`, `floatingTextPool`, `powerupPool`) that recycle objects to eliminate garbage collection micro-stuttering.
   - **Continuous Collision Detection (CCD)**: Sub-stepped physics updates to prevent high-speed tunneling through bricks.
@@ -85,6 +92,7 @@ When a brick shatters, there is an **18% chance** it drops a capsule. Watch out 
 | Move Paddle | `Mouse`, `Touch / Swipe`, or `←` / `→` (or `A` / `D` keys) |
 | Launch / Shoot / Release | `Spacebar` or `Tap / Left-Click Canvas` |
 | Pause / Resume | `P` key (or top header `⏸` button) |
+| Cycle Background Music | `B` key (or top header `🎵` button) |
 | Toggle Audio Mute | `M` key (or top header `🔊`/`🔇` button) |
 | Fullscreen Toggle | Top header `⛶` button |
 | In-Game Guide | `H` key |

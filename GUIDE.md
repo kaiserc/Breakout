@@ -25,6 +25,7 @@ A complete guide to mastering **Breakout / Arkanoid Deluxe**. Read this to maxim
 | Move paddle | `Mouse`, `Touch / Swipe`, or `←` / `→` (`A` / `D`) |
 | Launch ball / Fire lasers / Release catch | `Space` or `Tap / Click canvas` |
 | Pause / Resume | `P` (or top header button) |
+| Cycle Background Music Track | `B` (or top header `🎵` button) |
 | Toggle Audio Mute | `M` (or top header sound button) |
 | Fullscreen | `⛶` button |
 | In-game Guide | `H` |
