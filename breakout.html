@@ -1127,6 +1127,7 @@
   if (!MUSIC_TRACKS[currentMusic]) currentMusic = 'synthwave';
 
   let masterGainNode = null;
+  let masterCompressorNode = null;
   let musicGainNode = null;
   let currentTrackGain = null;
   let sfxGainNode = null;
@@ -1135,6 +1136,7 @@
   let nextStepTime = 0;
   let musicSchedulerTimer = null;
   let activeMusicVoices = new Set();
+  let fanfareDuckUntil = 0;
 
   const PENTATONIC = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
 
@@ -1190,10 +1192,19 @@
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+        // Master Dynamics Compressor / Limiter (prevents clipping & OS/hardware ducking)
+        masterCompressorNode = audioCtx.createDynamicsCompressor();
+        masterCompressorNode.threshold.setValueAtTime(-12, audioCtx.currentTime);
+        masterCompressorNode.knee.setValueAtTime(18, audioCtx.currentTime);
+        masterCompressorNode.ratio.setValueAtTime(4.0, audioCtx.currentTime);
+        masterCompressorNode.attack.setValueAtTime(0.003, audioCtx.currentTime);
+        masterCompressorNode.release.setValueAtTime(0.18, audioCtx.currentTime);
+        masterCompressorNode.connect(audioCtx.destination);
+
         // Master Gain Node
         masterGainNode = audioCtx.createGain();
-        masterGainNode.gain.setValueAtTime(muted ? 0 : 1.0, audioCtx.currentTime);
-        masterGainNode.connect(audioCtx.destination);
+        masterGainNode.gain.setValueAtTime(muted ? 0 : 0.88, audioCtx.currentTime);
+        masterGainNode.connect(masterCompressorNode);
 
         // Music Master Gain Node
         musicGainNode = audioCtx.createGain();
@@ -1205,9 +1216,9 @@
         currentTrackGain.gain.setValueAtTime(muted || currentMusic === 'off' ? 0 : 1.0, audioCtx.currentTime);
         currentTrackGain.connect(musicGainNode);
 
-        // SFX Master Gain Node
+        // SFX Master Gain Node (calibrated to 0.62 for punchy sound with zero master clipping)
         sfxGainNode = audioCtx.createGain();
-        sfxGainNode.gain.setValueAtTime(muted ? 0 : 0.9, audioCtx.currentTime);
+        sfxGainNode.gain.setValueAtTime(muted ? 0 : 0.62, audioCtx.currentTime);
         sfxGainNode.connect(masterGainNode);
 
         // Pre-create 1-second white noise buffer for percussions & shatter SFX
@@ -1222,21 +1233,26 @@
         audioCtx.resume();
       }
       if (currentMusic !== 'off' && !muted) {
-        startMusicEngine();
+        if (!musicSchedulerTimer) {
+          startMusicEngine();
+        }
       } else {
         stopMusicEngine();
       }
     } catch (e) {}
   }
 
-  function startMusicEngine() {
+  function startMusicEngine(forceReset = false) {
     if (!audioCtx || currentMusic === 'off' || muted) return;
+    if (musicSchedulerTimer && !forceReset) return;
     if (musicSchedulerTimer) {
       clearInterval(musicSchedulerTimer);
       musicSchedulerTimer = null;
     }
     nextStepTime = audioCtx.currentTime + 0.05;
-    musicStep = 0;
+    if (forceReset) {
+      musicStep = 0;
+    }
     musicSchedulerTimer = setInterval(musicSchedulerTick, 25);
   }
 
@@ -1296,7 +1312,7 @@
           currentTrackGain.gain.cancelScheduledValues(audioCtx.currentTime);
           currentTrackGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
         }
-        startMusicEngine();
+        startMusicEngine(true);
         if (musicGainNode) {
           const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
           musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
@@ -1489,14 +1505,16 @@
   function musicSchedulerTick() {
     if (!audioCtx || currentMusic === 'off' || muted) return;
 
+    const isFanfareActive = performance.now() < fanfareDuckUntil;
     const shouldPlay = (state === STATE.MENU || state === STATE.READY || state === STATE.PLAYING);
-    if (!shouldPlay) {
-      if (musicGainNode && musicGainNode.gain.value > 0.001) {
+    if (!shouldPlay || isFanfareActive) {
+      const minVol = isFanfareActive ? 0.015 : 0;
+      if (musicGainNode && musicGainNode.gain.value > minVol + 0.005) {
         musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-        musicGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
+        musicGainNode.gain.linearRampToValueAtTime(minVol, audioCtx.currentTime + 0.08);
       }
-      return;
+      if (!shouldPlay) return;
     } else {
       const targetVol = (state === STATE.MENU) ? 0.07 : 0.11;
       if (musicGainNode && Math.abs(musicGainNode.gain.value - targetVol) > 0.02) {
@@ -1515,7 +1533,7 @@
     while (nextStepTime < audioCtx.currentTime + lookahead) {
       scheduleTrackStep(currentMusic, musicStep, nextStepTime, stepDur);
       nextStepTime += stepDur;
-      musicStep = (musicStep + 1) % 64;
+      musicStep = (musicStep + 1) % 128;
     }
   }
 
@@ -1524,44 +1542,101 @@
       const bar = Math.floor(step / 16);
       const barStep = step % 16;
 
-      const chordRoots = [55.00 /*A1*/, 43.65 /*F1*/, 65.41 /*C2*/, 49.00 /*G1*/];
+      // 8-Bar Synthwave progression: Am -> F -> C -> G -> Dm -> F -> Em -> G
+      const chordRoots = [
+        55.00 /*A1*/, 43.65 /*F1*/, 65.41 /*C2*/, 49.00 /*G1*/,
+        73.42 /*D2*/, 43.65 /*F1*/, 41.20 /*E1*/, 49.00 /*G1*/
+      ];
+
       const chordArps = [
         [220.00, 261.63, 329.63, 440.00, 523.25, 440.00, 329.63, 261.63], // Am
         [174.61, 220.00, 261.63, 349.23, 440.00, 349.23, 261.63, 220.00], // F
         [130.81, 164.81, 196.00, 261.63, 329.63, 261.63, 196.00, 164.81], // C
-        [196.00, 246.94, 293.66, 392.00, 493.88, 392.00, 293.66, 246.94]  // G
+        [196.00, 246.94, 293.66, 392.00, 493.88, 392.00, 293.66, 246.94], // G
+        [146.83, 174.61, 220.00, 293.66, 349.23, 293.66, 220.00, 174.61], // Dm
+        [174.61, 220.00, 261.63, 349.23, 523.25, 349.23, 261.63, 220.00], // F6
+        [164.81, 196.00, 246.94, 329.63, 392.00, 329.63, 246.94, 196.00], // Em
+        [196.00, 246.94, 293.66, 392.00, 587.33, 493.88, 392.00, 293.66]  // G7
       ];
 
-      // Bass on eighth notes
+      // Bass: driving rolling 8th-notes with octave lift on offbeats
       if (barStep % 2 === 0) {
-        playSynthBass(chordRoots[bar], time, stepDur * 1.5, 'sawtooth', 520, 0.14);
+        const root = chordRoots[bar];
+        const isOctaveLift = (barStep % 4 === 2);
+        const bassFreq = isOctaveLift ? root * 2 : root;
+        const cutoff = (bar >= 4) ? 680 : 520;
+        playSynthBass(bassFreq, time, stepDur * 1.4, 'sawtooth', cutoff, 0.13);
       }
 
-      // Arp melody
+      // Arpeggio & Lead Melody
       const arpNotes = chordArps[bar];
       const noteFreq = arpNotes[barStep % arpNotes.length];
-      playSynthLead(noteFreq, time, stepDur * 0.85, 'triangle', 0.085);
+      playSynthLead(noteFreq, time, stepDur * 0.82, 'triangle', 0.075);
+
+      // Section B Lead Hook (Bars 4 to 7)
+      if (bar >= 4) {
+        const hookNotes = [
+          [0, 587.33, 4], [4, 523.25, 4], [8, 440.00, 6], // Bar 4 (Dm)
+          [16, 523.25, 4], [20, 440.00, 4], [24, 349.23, 6], // Bar 5 (F)
+          [32, 493.88, 4], [36, 440.00, 4], [40, 392.00, 6], // Bar 6 (Em)
+          [48, 440.00, 3], [52, 493.88, 3], [56, 523.25, 3], [60, 587.33, 4] // Bar 7 (G)
+        ];
+        const localStep = step - 64;
+        for (const [hStep, hFreq, hDur] of hookNotes) {
+          if (localStep === hStep) {
+            playSynthLead(hFreq, time, stepDur * hDur, 'sawtooth', 0.055, true);
+            break;
+          }
+        }
+      }
 
       // Drums
       if (barStep % 4 === 0) playSynthKick(time, 0.16);
       if (barStep % 8 === 4) playSynthSnare(time, 0.07);
-      if (barStep % 2 === 1) playSynthHat(time, 0.025, 0.03);
+      if (barStep % 2 === 1) {
+        const isOpen = (barStep === 2 || barStep === 6 || barStep === 10 || barStep === 14);
+        playSynthHat(time, isOpen ? 0.045 : 0.025, isOpen ? 0.035 : 0.024);
+      }
+      // Drum fills on turnaround bars 3 and 7
+      if ((bar === 3 || bar === 7) && (barStep === 13 || barStep === 15)) {
+        playSynthSnare(time, 0.055);
+      }
 
     } else if (trackId === 'chiptune') {
       const bar = Math.floor(step / 16);
       const barStep = step % 16;
 
+      // 128-step melody (8 full bars: 4 bars verse + 4 bars soaring chorus & turnaround)
       const melSeq = [
+        // Bar 0 (C verse)
         523.25, 659.25, 783.99, 1046.50, 783.99, 659.25, 523.25, 659.25,
-        783.99, 1046.50, 1318.51, 1046.50, 783.99, 659.25, 783.99, 880.00,
+        783.99, 1046.50, 1174.66, 1046.50, 783.99, 659.25, 783.99, 880.00,
+        // Bar 1 (Am verse)
         440.00, 523.25, 659.25, 880.00, 659.25, 523.25, 440.00, 523.25,
-        659.25, 880.00, 1046.50, 880.00, 659.25, 523.25, 659.25, 783.99,
+        659.25, 880.00, 987.77, 880.00, 659.25, 523.25, 659.25, 783.99,
+        // Bar 2 (F verse)
         349.23, 440.00, 523.25, 698.46, 523.25, 440.00, 349.23, 440.00,
         523.25, 698.46, 880.00, 698.46, 523.25, 440.00, 523.25, 659.25,
+        // Bar 3 (G turnaround)
         392.00, 493.88, 587.33, 783.99, 587.33, 493.88, 392.00, 493.88,
-        587.33, 783.99, 987.77, 783.99, 587.33, 493.88, 587.33, 523.25
+        587.33, 783.99, 987.77, 783.99, 587.33, 493.88, 587.33, 523.25,
+        // Bar 4 (C chorus)
+        1046.50, 1046.50, 783.99, 783.99, 880.00, 987.77, 1046.50, 1318.51,
+        1174.66, 1046.50, 987.77, 880.00, 783.99, 659.25, 783.99, 880.00,
+        // Bar 5 (Am chorus)
+        880.00, 880.00, 659.25, 659.25, 698.46, 783.99, 880.00, 1046.50,
+        987.77, 880.00, 783.99, 698.46, 659.25, 523.25, 587.33, 659.25,
+        // Bar 6 (F chorus)
+        698.46, 698.46, 523.25, 523.25, 587.33, 659.25, 698.46, 880.00,
+        783.99, 698.46, 659.25, 587.33, 523.25, 587.33, 659.25, 698.46,
+        // Bar 7 (G chip run & turnaround)
+        783.99, 987.77, 1174.66, 1567.98, 1318.51, 1174.66, 987.77, 783.99,
+        523.25, 659.25, 783.99, 1046.50, 1174.66, 1318.51, 1567.98, 2093.00
       ];
-      const bassRoots = [130.81, 110.00, 87.31, 98.00];
+      const bassRoots = [
+        130.81, 110.00, 87.31, 98.00,
+        130.81, 110.00, 87.31, 98.00
+      ];
 
       const leadFreq = melSeq[step % melSeq.length];
       playSynthLead(leadFreq, time, stepDur * 0.72, 'square', 0.065, true);
@@ -1570,32 +1645,38 @@
         playSynthBass(bassRoots[bar], time, stepDur * 2.0, 'triangle', 700, 0.15);
       }
 
-      if (barStep % 8 === 0) playSynthKick(time, 0.15);
+      if (barStep % 8 === 0 || (bar >= 4 && barStep === 10)) playSynthKick(time, 0.15);
       if (barStep % 8 === 4) playSynthSnare(time, 0.065);
       if (barStep % 2 === 1) playSynthHat(time, 0.02, 0.028);
 
     } else if (trackId === 'ambient') {
-      const ambientStep = Math.floor(step / 2) % 32;
-      const bar = Math.floor(ambientStep / 8);
-      const barStep = ambientStep % 8;
+      // 128 steps total (64 half-steps = 8 two-bar chords = 16 ambient measures!)
+      const ambientStep = Math.floor(step / 2) % 64;
+      const chordIdx = Math.floor(ambientStep / 8);
+      const chordStep = ambientStep % 8;
 
       if (step % 2 === 0) {
-        if (barStep === 0) {
+        if (chordStep === 0) {
           const pads = [
             [146.83, 174.61, 220.00, 261.63, 329.63], // Dm9
             [116.54, 146.83, 174.61, 220.00, 293.66], // Bbmaj7
-            [87.31, 130.81, 174.61, 220.00, 392.00],  // Fsus2
-            [130.81, 196.00, 246.94, 293.66, 329.63]  // C9
+            [98.00,  146.83, 174.61, 220.00, 293.66], // Gm9
+            [110.00, 164.81, 220.00, 293.66, 329.63], // Asus4
+            [87.31,  130.81, 174.61, 220.00, 329.63], // Fmaj7
+            [82.41,  123.47, 164.81, 196.00, 293.66], // Em7b5
+            [116.54, 174.61, 220.00, 233.08, 349.23], // Bbadd9
+            [130.81, 196.00, 246.94, 293.66, 392.00]  // C9
           ];
-          playSynthPad(pads[bar], time, stepDur * 16, 0.065);
-          const subs = [73.42, 58.27, 43.65, 65.41];
-          playSynthBass(subs[bar], time, stepDur * 14, 'sine', 220, 0.14);
+          const subs = [73.42, 58.27, 49.00, 55.00, 43.65, 41.20, 58.27, 65.41];
+          playSynthPad(pads[chordIdx], time, stepDur * 16, 0.065);
+          playSynthBass(subs[chordIdx], time, stepDur * 14, 'sine', 190, 0.14);
         }
 
-        if (barStep === 3 || barStep === 6) {
-          const chimes = [880.00, 1046.50, 1174.66, 1318.51, 1567.98];
-          const cf = chimes[(ambientStep * 3) % chimes.length];
-          playSynthLead(cf, time, stepDur * 3.5, 'sine', 0.045);
+        // Sparkling celestial pentatonic chimes
+        if (chordStep === 2 || chordStep === 5) {
+          const chimes = [880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
+          const cf = chimes[(ambientStep * 5 + chordIdx * 3) % chimes.length];
+          playSynthLead(cf, time, stepDur * 3.8, 'sine', 0.045);
         }
       }
 
@@ -1603,24 +1684,35 @@
       const bar = Math.floor(step / 16);
       const barStep = step % 16;
 
+      // 8-Bar Acid progression with key transitions & builds
+      const keyMults = [1.0, 1.0, 1.189 /*G*/, 1.334 /*A*/, 0.841 /*C*/, 0.944 /*D*/, 1.0, 1.334];
       const acidNotes = [
         82.41, 82.41, 164.81, 82.41, 110.00, 82.41, 123.47, 82.41,
         82.41, 164.81, 82.41, 146.83, 82.41, 123.47, 110.00, 98.00
       ];
 
-      const acidFreq = (bar === 2) ? acidNotes[barStep] * 1.334 : acidNotes[barStep];
+      const acidFreq = acidNotes[barStep] * keyMults[bar];
       const isAccent = (barStep === 2 || barStep === 7 || barStep === 11 || barStep === 14);
-      playSynthBass(acidFreq, time, stepDur * (isAccent ? 1.4 : 0.8), 'sawtooth', isAccent ? 1100 : 480, isAccent ? 0.19 : 0.12);
+      const baseCutoff = 420 + bar * 60;
+      const cutoff = isAccent ? baseCutoff * 2.3 : baseCutoff;
+      playSynthBass(acidFreq, time, stepDur * (isAccent ? 1.4 : 0.8), 'sawtooth', cutoff, isAccent ? 0.18 : 0.12);
 
+      // Off-beat synth stabs
       if (barStep === 3 || barStep === 10) {
         [329.63, 392.00, 493.88].forEach(f => {
-          playSynthLead(f, time, stepDur * 0.9, 'sawtooth', 0.055);
+          playSynthLead(f * keyMults[bar], time, stepDur * 0.9, 'sawtooth', 0.05);
         });
       }
 
-      if (barStep % 4 === 0) playSynthKick(time, 0.20);
-      if (barStep % 8 === 4) playSynthSnare(time, 0.08);
-      if (barStep % 2 === 1) playSynthHat(time, 0.035, 0.04);
+      // Drums
+      if (barStep % 4 === 0) playSynthKick(time, 0.19);
+      if (barStep % 8 === 4) playSynthSnare(time, 0.075);
+      if (barStep % 2 === 1) playSynthHat(time, 0.035, 0.038);
+
+      // Bar 7 intense snare roll turnaround
+      if (bar === 7 && barStep >= 10 && barStep % 2 === 0) {
+        playSynthSnare(time, 0.06);
+      }
     }
   }
 
@@ -1739,9 +1831,10 @@
 
   function playLevelClearFanfare() {
     if (muted) return;
+    fanfareDuckUntil = performance.now() + 1100;
     if (audioCtx && musicGainNode) {
       musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      musicGainNode.gain.linearRampToValueAtTime(0.015, audioCtx.currentTime + 0.04);
     }
     [523.25, 659.25, 783.99, 1046.50, 1318.51].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.18, 'triangle', 0.14), idx * 80);
@@ -1750,9 +1843,10 @@
 
   function playGameOverSfx() {
     if (muted) return;
+    fanfareDuckUntil = performance.now() + 2000;
     if (audioCtx && musicGainNode) {
       musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      musicGainNode.gain.linearRampToValueAtTime(0.015, audioCtx.currentTime + 0.04);
     }
     [329.63, 293.66, 261.63, 196.00].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.22, 'sawtooth', 0.1), idx * 110);
@@ -3510,11 +3604,11 @@
       } else {
         if (masterGainNode) {
           masterGainNode.gain.cancelScheduledValues(t);
-          masterGainNode.gain.setValueAtTime(1.0, t);
+          masterGainNode.gain.setValueAtTime(0.88, t);
         }
         if (sfxGainNode) {
           sfxGainNode.gain.cancelScheduledValues(t);
-          sfxGainNode.gain.setValueAtTime(0.9, t);
+          sfxGainNode.gain.setValueAtTime(0.62, t);
         }
         if (currentMusic === 'off') {
           stopMusicEngine();
