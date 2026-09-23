@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Breakout — Arkanoid Deluxe</title>
+<meta name="description" content="A fully offline, zero-dependency Breakout / Arkanoid arcade game with procedural music, 8 campaign levels, endless mode, achievements, and 4 visual themes.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111827'/%3E%3Crect x='4' y='6' width='24' height='9' rx='2' fill='%23f43f5e'/%3E%3Crect x='4' y='17' width='11' height='9' rx='2' fill='%2338bdf8'/%3E%3Crect x='17' y='17' width='11' height='9' rx='2' fill='%23a855f7'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -35,7 +36,6 @@
     gap: 12px;
   }
   h1 {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-weight: 900;
     letter-spacing: 8px;
     font-size: 24px;
@@ -72,7 +72,6 @@
     z-index: 10;
   }
   .game-title {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 2px;
@@ -134,7 +133,6 @@
   }
   .overlay.hidden { display: none; }
   .overlay h2 {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 28px;
     letter-spacing: 4px;
     background: linear-gradient(90deg, #fff, var(--accent));
@@ -191,7 +189,6 @@
   .menu-view.hidden { display: none !important; }
   
   .menu-logo {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 34px !important;
     font-weight: 900;
     letter-spacing: 8px;
@@ -203,7 +200,6 @@
     text-shadow: 0 0 30px rgba(56, 249, 215, 0.4);
   }
   .subtitle {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 9px;
     letter-spacing: 4px;
     opacity: 0.6;
@@ -376,7 +372,6 @@
     margin-bottom: 6px;
     color: var(--accent3);
     text-align: center;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   .achievements-list {
     display: flex;
@@ -492,11 +487,11 @@
       <div class="game-header">
         <div class="game-title" id="gameTitle">BREAKOUT</div>
         <div class="top-controls">
-          <button class="icon-btn" id="nudgeBtn" title="Nudge / Free Stuck Balls (N or Space)">⚡</button>
-          <button class="icon-btn" id="musicBtn" title="Music: Neon Drive (B)">🎵</button>
-          <button class="icon-btn" id="pauseBtn" title="Pause Game (P)">⏸</button>
-          <button class="icon-btn" id="muteBtn" title="Toggle Sound (M)">🔊</button>
-          <button class="icon-btn" id="fullscreenBtn" title="Toggle Fullscreen">⛶</button>
+          <button class="icon-btn" id="nudgeBtn" title="Nudge / Free Stuck Balls (N or Space)" aria-label="Nudge balls">⚡</button>
+          <button class="icon-btn" id="musicBtn" title="Music: Neon Drive (B)" aria-label="Toggle music">🎵</button>
+          <button class="icon-btn" id="pauseBtn" title="Pause Game (P)" aria-label="Pause game">⏸</button>
+          <button class="icon-btn" id="muteBtn" title="Toggle Sound (M)" aria-label="Toggle sound">🔊</button>
+          <button class="icon-btn" id="fullscreenBtn" title="Toggle Fullscreen" aria-label="Toggle fullscreen">⛶</button>
         </div>
       </div>
       <canvas id="game" width="480" height="600"></canvas>
@@ -765,8 +760,6 @@
   let toasts = [];
   let fireballStreak = 0;
   let levelPowerupsCount = 0;
-  let hasTriggeredNewBest = false;
-
   // Init ambient stars
   for (let i = 0; i < 40; i++) {
     stars.push({
@@ -821,6 +814,9 @@
     CONFUSE: { label: '⇄',    color: '#ff0055', desc: 'Joker Hazard: Inverts controls for 6s (AVOID!)', isNegative: true, isJoker: true }
   };
   const POWERUP_KEYS = Object.keys(POWERUPS);
+  const POSITIVE_POWERUP_KEYS = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative);
+  const POSITIVE_POWERUP_KEYS_NO_LIFE = POSITIVE_POWERUP_KEYS.filter(k => k !== 'LIFE');
+  const NEGATIVE_POWERUP_KEYS = POWERUP_KEYS.filter(k => POWERUPS[k].isNegative);
   const POWERUP_W = 32;
   const POWERUP_H = 18;
   const POWERUP_VY = 3.5;
@@ -1799,7 +1795,7 @@
       }
 
       // Paddle Spin / English
-      const paddleSpeed = (paddle.x - (paddle.prevX || paddle.x)) / (16.667 / 16.667 || 1);
+      const paddleSpeed = (paddle.x - (paddle.prevX || paddle.x)) / (step || 1);
       const spinAngle = Math.max(-0.25, Math.min(0.25, paddleSpeed * 0.25));
       const ang = hit * (Math.PI / 3) + spinAngle;
       const clampedAng = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, ang));
@@ -1861,7 +1857,7 @@
     }
     
     // Track laser hits
-    if (ballOrLaser && ballOrLaser.vy && effects.laser > 0) {
+    if (ballOrLaser && ballOrLaser.w !== undefined && effects.laser > 0) {
       laserBricksDestroyed++;
       if (laserBricksDestroyed >= 20) {
         unlockAchievement('laser20');
@@ -2137,7 +2133,6 @@
     if (effects.catch > 0) { effects.catch -= dt; }
     if (effects.confuse > 0) { effects.confuse -= dt; }
     if (msgTime > 0) { msgTime -= dt; if (msgTime <= 0) msg = ''; }
-    if (screenShake.time > 0) screenShake.time -= dt;
 
     const pw = currentPaddleWidth();
     const step = dt / 16.667;
@@ -2214,8 +2209,13 @@
 
       // Ball trail history
       if (!b.trail) b.trail = [];
-      b.trail.push({ x: b.x, y: b.y });
-      if (b.trail.length > 6) b.trail.shift();
+      if (b.trail.length >= 6) {
+        const recycled = b.trail.shift();
+        recycled.x = b.x; recycled.y = b.y;
+        b.trail.push(recycled);
+      } else {
+        b.trail.push({ x: b.x, y: b.y });
+      }
 
       if (b.caught) {
         b.x = paddle.x + (b.stuckOffset || pw / 2);
@@ -2890,9 +2890,6 @@
     });
   }
 
-  // Backwards compat overlay triggers
-  function hideOverlay() { overlay.classList.add('hidden'); }
-
   function showMainMenu() {
     state = STATE.MENU;
     screenShake.time = 0;
@@ -2974,17 +2971,10 @@
     }
     // Update personal best on main menu too
     document.getElementById('pbMain').textContent = `Personal Best: ${highScore}`;
-    if (score > stats.maxCombo) { // wait, combo is not score, combo is maxCombo.
-      // Update combo stats elsewhere
-    }
   }
 
   let statsDirty = false;
   let lastStatsSaveTime = 0;
-
-  function markStatsDirty() {
-    statsDirty = true;
-  }
 
   function saveStats(force = false) {
     const now = performance.now();
@@ -3108,7 +3098,7 @@
     [
       ".22....22.",
       "2??2..2??2",
-      "2????2????2",
+      "2????2????",
       "2M2MM2MM22",
       ".2MM22MM2.",
       "..2M22M2..",
@@ -3142,10 +3132,10 @@
       "3M333333M3",
       "3M3E22E3M3",
       "1.11M1M11.",
-      "1.?.MMM.?.1",
-      "1.1.MMM.1.1",
-      "1.1.MMM.1.1",
-      "2.2.E.E.2.2",
+      "1.?.MMM.?.",
+      "1.1.MMM.1.",
+      "1.1.MMM.1.",
+      "2.2.EE.2.2",
       "3333333333"
     ]
   ];
@@ -3257,6 +3247,7 @@
     stats.gamesPlayed++;
     livesLostThisLevel = 0;
     laserBricksDestroyed = 0;
+    explosiveTriggers = 0;
     levelPowerupsCount = 0;
     fireballStreak = 0;
     
@@ -3470,25 +3461,21 @@
         if (lives < 5 && Math.random() < 0.08) {
           chosenType = 'LIFE'; // rare special drop
         } else {
-          const nonLifePositives = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative && k !== 'LIFE');
-          chosenType = nonLifePositives[Math.floor(Math.random() * nonLifePositives.length)];
+          chosenType = POSITIVE_POWERUP_KEYS_NO_LIFE[Math.floor(Math.random() * POSITIVE_POWERUP_KEYS_NO_LIFE.length)];
         }
       } else {
         // 20% negative hazard
-        const negatives = POWERUP_KEYS.filter(k => POWERUPS[k].isNegative);
-        chosenType = negatives[Math.floor(Math.random() * negatives.length)];
+        chosenType = NEGATIVE_POWERUP_KEYS[Math.floor(Math.random() * NEGATIVE_POWERUP_KEYS.length)];
       }
       powerupPool.spawn(x, y, POWERUP_VY, chosenType);
     }
   }
 
   function dropMysteryPowerup(x, y) {
-    const positives = POWERUP_KEYS.filter(k => !POWERUPS[k].isNegative);
-    const negatives = POWERUP_KEYS.filter(k => POWERUPS[k].isNegative);
     // 50% positive, 50% negative
     const type = Math.random() < 0.5
-      ? positives[Math.floor(Math.random() * positives.length)]
-      : negatives[Math.floor(Math.random() * negatives.length)];
+      ? POSITIVE_POWERUP_KEYS[Math.floor(Math.random() * POSITIVE_POWERUP_KEYS.length)]
+      : NEGATIVE_POWERUP_KEYS[Math.floor(Math.random() * NEGATIVE_POWERUP_KEYS.length)];
     powerupPool.spawn(x, y, POWERUP_VY, type);
   }
 

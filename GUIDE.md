@@ -54,7 +54,7 @@ When a brick shatters, there is an **18% chance** it drops a capsule. `+1 LIFE` 
 | Power-up | Icon / Color | Duration | Tactical Advice |
 |---|---|---|---|
 | **WIDE** | 🟦 `#4dd0ff` | ~12 s | Expands paddle width. Clears the `TINY` debuff immediately. |
-| **SHIELD** | 🛡️ `#00f5d4` | ~15 s | Deploys a laser floor at the bottom of the screen that saves up to 3 dropped balls! |
+| **SHIELD** | 🛡️ `#00f5d4` | Until hit | Deploys a safety barrier at the bottom of the screen. Saves one dropped ball, then breaks! |
 | **MULTI** | 🟨 `#ffe66d` | Instant | Splits active balls into multiple comet balls (up to 8 balls total). |
 | **SLOW** | 🟩 `#38f9d7` | ~9 s | Reduces ball speed. Crucial when high-level balls get frantic. |
 | **+1 LIFE** | 💖 `#ff4d8d` | Instant | Awards an extra life (Max 5). Magnetically drifts toward paddle. |
@@ -86,7 +86,7 @@ Consecutive brick hits **before the ball touches the paddle again** build a mult
 | **1** | The Wall | Classic full 8×10 brick wall. Tutorial pace (`5.5` speed). |
 | **2** | Diamond Edge | Diamond formation with reinforced center bricks. |
 | **3** | Space Invader | Iconic pixel invader pattern with armored core. |
-| **4** | Twin Pillars | Heavy side columns, metal blocks, and bridge obstacles. |
+| **4** | Checkered Fortress | Checkerboard grid with metal sentinels and reinforced 2-hit bricks. |
 | **5** | Heart Core | Heart layout with armored exterior walls. |
 | **6** | Hourglass | Narrow middle choke point and explosive bricks. |
 | **7** | The Maze | Interlocking labyrinth walls of 2-hit reinforced bricks. |
