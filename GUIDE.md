@@ -24,6 +24,7 @@ A complete guide to mastering **Breakout / Arkanoid Deluxe**. Read this to maxim
 |--------|-------|
 | Move paddle | `Mouse`, `Touch / Swipe`, or `←` / `→` (`A` / `D`) |
 | Launch ball / Fire lasers / Release catch | `Space` or `Tap / Click canvas` |
+| Nudge ball / Free stuck balls | `N`, `Space`, or top header `⚡` button |
 | Pause / Resume | `P` (or top header button) |
 | Cycle Background Music Track | `B` (or top header `🎵` button) |
 | Toggle Audio Mute | `M` (or top header sound button) |
@@ -39,6 +40,8 @@ The bounce angle is determined by where the ball contacts the paddle:
 - **Center impact** → Shoots nearly straight up (safer, controlled).
 - **Edge impact** → Deflects out at steep angles up to 60° (ideal for penetrating top channels).
 - **Paddle Motion (English)** → Moving the paddle while striking the ball slices the trajectory for precision bank shots!
+- **Anti-Stuck & Orbit Breaker (Auto)** → Never get soft-locked in infinite loops between indestructible steel bricks or horizontal walls. The physics engine enforces minimum vertical velocity, applies bevel dispersion on steel impacts, and automatically fires an **Orbit Breaker** if a ball is trapped for >3.5–6s.
+- **Manual Table Nudge (`⚡` / `N`)** → Whenever you want to perturb ball angles or rescue balls from tight mazes, tap `N` or the header `⚡` button to shake the table and kick all balls downward!
 
 **Pro Tip**: Slice the ball with the paddle edges to funnel it above the brick wall. Once above the wall, the ball will bounce between the ceiling and bricks, wiping out entire rows automatically!
 

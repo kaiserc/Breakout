@@ -49,6 +49,8 @@ A classic, highly polished **Breakout / Arkanoid** arcade clone built with vanil
   - **Object Pools** (`particlePool`, `laserPool`, `floatingTextPool`, `powerupPool`) that recycle objects to eliminate garbage collection micro-stuttering.
   - **Continuous Collision Detection (CCD)**: Sub-stepped physics updates to prevent high-speed tunneling through bricks.
   - **Paddle Spin**: Deflection angle adjusts depending on the paddle's speed and movement direction during contact.
+  - **Anti-Stuck & Autonomous Orbit Breaker**: Enforces minimum vertical speed to prevent horizontal bounce traps, introduces bevel deflection on metal bricks to naturally disperse closed geometric loops, and auto-vectors balls trapped for >3.5–6s toward destructible bricks.
+  - **Interactive Table Nudge (`⚡` / `N` / `Space`)**: Shakes the table with mechanical SFX, scattering stuck balls into open lanes anytime.
 
 ---
 

@@ -97,7 +97,7 @@
     font-size: 12px;
     padding: 0;
     box-shadow: none;
-    transition: background 0.2s, transform 0.1s;
+    transition: background 0.2s, transform 0.1s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
   }
   .icon-btn:hover {
     background: rgba(255, 255, 255, 0.15);
@@ -105,6 +105,12 @@
   }
   .icon-btn:active {
     transform: scale(0.95);
+  }
+  .icon-btn.muted, .icon-btn.music-off {
+    background: rgba(255, 77, 141, 0.18);
+    border-color: rgba(255, 77, 141, 0.45);
+    color: #ff4d8d;
+    box-shadow: 0 0 8px rgba(255, 77, 141, 0.25);
   }
   canvas {
     display: block;
@@ -486,6 +492,7 @@
       <div class="game-header">
         <div class="game-title" id="gameTitle">BREAKOUT</div>
         <div class="top-controls">
+          <button class="icon-btn" id="nudgeBtn" title="Nudge / Free Stuck Balls (N or Space)">⚡</button>
           <button class="icon-btn" id="musicBtn" title="Music: Neon Drive (B)">🎵</button>
           <button class="icon-btn" id="pauseBtn" title="Pause Game (P)">⏸</button>
           <button class="icon-btn" id="muteBtn" title="Toggle Sound (M)">🔊</button>
@@ -576,6 +583,7 @@
     <div class="controls">
       <span><b>Mouse / Touch / ← →</b> move</span>
       <span><b>Space / Tap</b> launch &bull; laser &bull; release</span>
+      <span><b>N / ⚡ / Space</b> nudge</span>
       <span><b>P</b> pause</span>
       <span><b>B</b> music</span>
       <span><b>M</b> mute</span>
@@ -604,6 +612,7 @@
   const muteBtn = document.getElementById('muteBtn');
   const pauseBtn = document.getElementById('pauseBtn');
   const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const nudgeBtn = document.getElementById('nudgeBtn');
 
   // Views
   const views = {
@@ -1073,13 +1082,68 @@
 
   let masterGainNode = null;
   let musicGainNode = null;
+  let currentTrackGain = null;
   let sfxGainNode = null;
   let sharedNoiseBuffer = null;
   let musicStep = 0;
   let nextStepTime = 0;
   let musicSchedulerTimer = null;
+  let activeMusicVoices = [];
 
   const PENTATONIC = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
+
+  function stopCurrentTrackVoices() {
+    // Immediately stop and disconnect all scheduled/playing voice nodes
+    for (const v of activeMusicVoices) {
+      try {
+        if (v.stop) {
+          try {
+            v.stop(audioCtx ? audioCtx.currentTime : 0);
+          } catch (e1) {
+            try { v.stop(); } catch (e2) {}
+          }
+        }
+      } catch (e) {}
+      try {
+        if (v.disconnect) v.disconnect();
+      } catch (e) {}
+    }
+    activeMusicVoices = [];
+
+    // Fade out and disconnect the previous track sub-bus
+    if (currentTrackGain && audioCtx) {
+      try {
+        currentTrackGain.gain.cancelScheduledValues(audioCtx.currentTime);
+        currentTrackGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        const oldGain = currentTrackGain;
+        setTimeout(() => {
+          try { oldGain.disconnect(); } catch (e) {}
+        }, 35);
+      } catch (e) {}
+    }
+
+    // Allocate fresh sub-bus for the next track
+    if (audioCtx && musicGainNode) {
+      currentTrackGain = audioCtx.createGain();
+      const busGain = (muted || currentMusic === 'off') ? 0 : 1.0;
+      currentTrackGain.gain.setValueAtTime(busGain, audioCtx.currentTime);
+      currentTrackGain.connect(musicGainNode);
+    }
+  }
+
+  function registerMusicVoice(node) {
+    if (!node) return;
+    activeMusicVoices.push(node);
+    const onEnd = () => {
+      const idx = activeMusicVoices.indexOf(node);
+      if (idx !== -1) activeMusicVoices.splice(idx, 1);
+    };
+    if (node.addEventListener) {
+      node.addEventListener('ended', onEnd);
+    } else {
+      node.onended = onEnd;
+    }
+  }
 
   function initAudio() {
     try {
@@ -1088,17 +1152,22 @@
 
         // Master Gain Node
         masterGainNode = audioCtx.createGain();
-        masterGainNode.gain.setValueAtTime(muted ? 0.0001 : 1.0, audioCtx.currentTime);
+        masterGainNode.gain.setValueAtTime(muted ? 0 : 1.0, audioCtx.currentTime);
         masterGainNode.connect(audioCtx.destination);
 
         // Music Master Gain Node
         musicGainNode = audioCtx.createGain();
-        musicGainNode.gain.setValueAtTime(muted || currentMusic === 'off' ? 0.0001 : 0.11, audioCtx.currentTime);
+        musicGainNode.gain.setValueAtTime(muted || currentMusic === 'off' ? 0 : 0.11, audioCtx.currentTime);
         musicGainNode.connect(masterGainNode);
+
+        // Music Track Sub-Bus
+        currentTrackGain = audioCtx.createGain();
+        currentTrackGain.gain.setValueAtTime(muted || currentMusic === 'off' ? 0 : 1.0, audioCtx.currentTime);
+        currentTrackGain.connect(musicGainNode);
 
         // SFX Master Gain Node
         sfxGainNode = audioCtx.createGain();
-        sfxGainNode.gain.setValueAtTime(muted ? 0.0001 : 0.9, audioCtx.currentTime);
+        sfxGainNode.gain.setValueAtTime(muted ? 0 : 0.9, audioCtx.currentTime);
         sfxGainNode.connect(masterGainNode);
 
         // Pre-create 1-second white noise buffer for percussions & shatter SFX
@@ -1114,13 +1183,18 @@
       }
       if (currentMusic !== 'off' && !muted) {
         startMusicEngine();
+      } else {
+        stopMusicEngine();
       }
     } catch (e) {}
   }
 
   function startMusicEngine() {
     if (!audioCtx || currentMusic === 'off' || muted) return;
-    if (musicSchedulerTimer) return;
+    if (musicSchedulerTimer) {
+      clearInterval(musicSchedulerTimer);
+      musicSchedulerTimer = null;
+    }
     nextStepTime = audioCtx.currentTime + 0.05;
     musicStep = 0;
     musicSchedulerTimer = setInterval(musicSchedulerTick, 25);
@@ -1131,14 +1205,17 @@
       clearInterval(musicSchedulerTimer);
       musicSchedulerTimer = null;
     }
+    stopCurrentTrackVoices();
   }
 
   function updateMusicUI() {
     const musicBtn = document.getElementById('musicBtn');
+    const isOff = currentMusic === 'off';
     if (musicBtn) {
       const track = MUSIC_TRACKS[currentMusic] || MUSIC_TRACKS.synthwave;
-      musicBtn.title = `Music: ${track.name} (B)`;
-      musicBtn.textContent = currentMusic === 'off' ? '🎵' : '🎶';
+      musicBtn.title = isOff ? 'Music: Off (B) - Click to Enable' : `Music: ${track.name} (B) - Click to Change`;
+      musicBtn.textContent = isOff ? '🔇' : '🎶';
+      musicBtn.classList.toggle('music-off', isOff);
     }
 
     document.querySelectorAll('.music-btn').forEach(btn => {
@@ -1157,23 +1234,34 @@
       localStorage.setItem('breakout_music_style', currentMusic);
     } catch (e) {}
 
+    // Immediately stop and cancel all lingering voices from previous track
+    stopCurrentTrackVoices();
     musicStep = 0;
+
     if (audioCtx) {
       nextStepTime = audioCtx.currentTime + 0.05;
       if (currentMusic === 'off' || muted) {
         stopMusicEngine();
         if (musicGainNode) {
           musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-          musicGainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+          musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        }
+        if (currentTrackGain) {
+          currentTrackGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          currentTrackGain.gain.setValueAtTime(0, audioCtx.currentTime);
         }
       } else {
+        stopMusicEngine();
+        if (currentTrackGain) {
+          currentTrackGain.gain.cancelScheduledValues(audioCtx.currentTime);
+          currentTrackGain.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        }
         startMusicEngine();
         if (musicGainNode) {
           const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
           musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-          musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+          musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+          musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.08);
         }
       }
     }
@@ -1212,7 +1300,8 @@
 
       osc.connect(filter);
       filter.connect(gain);
-      gain.connect(musicGainNode);
+      gain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(osc);
 
       osc.start(time);
       osc.stop(time + dur + 0.02);
@@ -1238,7 +1327,8 @@
       gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
 
       osc.connect(gain);
-      gain.connect(musicGainNode);
+      gain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(osc);
 
       osc.start(time);
       osc.stop(time + dur + 0.02);
@@ -1260,7 +1350,8 @@
         gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
 
         osc.connect(gain);
-        gain.connect(musicGainNode);
+        gain.connect(currentTrackGain || musicGainNode);
+        registerMusicVoice(osc);
 
         osc.start(time);
         osc.stop(time + dur + 0.05);
@@ -1282,7 +1373,8 @@
       gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.08);
 
       osc.connect(gain);
-      gain.connect(musicGainNode);
+      gain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(osc);
 
       osc.start(time);
       osc.stop(time + 0.09);
@@ -1305,7 +1397,8 @@
 
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(musicGainNode);
+      gain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(src);
 
       src.start(time);
       src.stop(time + dur + 0.01);
@@ -1329,7 +1422,8 @@
 
       src.connect(filter);
       filter.connect(gain);
-      gain.connect(musicGainNode);
+      gain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(src);
 
       src.start(time);
       src.stop(time + 0.08);
@@ -1344,7 +1438,8 @@
       oscGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.05);
 
       osc.connect(oscGain);
-      oscGain.connect(musicGainNode);
+      oscGain.connect(currentTrackGain || musicGainNode);
+      registerMusicVoice(osc);
       osc.start(time);
       osc.stop(time + 0.06);
     } catch (e) {}
@@ -1357,13 +1452,15 @@
     const shouldPlay = (state === STATE.MENU || state === STATE.READY || state === STATE.PLAYING);
     if (!shouldPlay) {
       if (musicGainNode && musicGainNode.gain.value > 0.001) {
+        musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-        musicGainNode.gain.linearRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+        musicGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
       }
       return;
     } else {
       const targetVol = (state === STATE.MENU) ? 0.07 : 0.11;
       if (musicGainNode && Math.abs(musicGainNode.gain.value - targetVol) > 0.02) {
+        musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
         musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.2);
       }
@@ -1601,9 +1698,10 @@
   }
 
   function playLevelClearFanfare() {
+    if (muted) return;
     if (audioCtx && musicGainNode) {
       musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
     }
     [523.25, 659.25, 783.99, 1046.50, 1318.51].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.18, 'triangle', 0.14), idx * 80);
@@ -1611,9 +1709,10 @@
   }
 
   function playGameOverSfx() {
+    if (muted) return;
     if (audioCtx && musicGainNode) {
       musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-      musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      musicGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
     }
     [329.63, 293.66, 261.63, 196.00].forEach((f, idx) => {
       setTimeout(() => playTone(f, 0.22, 'sawtooth', 0.1), idx * 110);
@@ -1641,6 +1740,8 @@
       
       combo = 1; // reset combo on paddle touch
       fireballStreak = 0;
+      b.metalHits = 0;
+      b.timeSinceProgress = 0;
       const hit = (b.x - (paddle.x + pw / 2)) / (pw / 2);
 
       if (effects.catch > 0) {
@@ -1691,6 +1792,11 @@
     if (brick.type === 'metal') {
       playTone(400, 0.04, 'sawtooth', 0.08, 300);
       return;
+    }
+
+    if (ballOrLaser && ballOrLaser.vx !== undefined) {
+      ballOrLaser.metalHits = 0;
+      ballOrLaser.timeSinceProgress = 0;
     }
 
     brick.hp--;
@@ -1772,7 +1878,116 @@
     }
   }
 
-    function handleBricks(b) {
+  function enforceMinVerticalSpeed(b) {
+    const sp = speedOf(b) || getLevelSpeed();
+    const minVy = sp * 0.28;
+    if (Math.abs(b.vy) < minVy) {
+      const sign = b.vy === 0 ? (b.y < H / 2 ? 1 : -1) : Math.sign(b.vy);
+      b.vy = sign * minVy;
+      const remSq = Math.max(0, sp * sp - b.vy * b.vy);
+      b.vx = (b.vx >= 0 ? 1 : -1) * Math.sqrt(remSq);
+    }
+  }
+
+  function applyMetalDeflection(b, brick, hitAxis) {
+    b.metalHits = (b.metalHits || 0) + 1;
+    const sp = speedOf(b) || getLevelSpeed();
+
+    // Add bevel/curvature deflection based on where it hit along the edge
+    if (hitAxis === 'x') {
+      const relY = Math.max(-1, Math.min(1, (b.y - (brick.y + brick.h / 2)) / (brick.h / 2)));
+      b.vy += relY * (sp * 0.16);
+    } else {
+      const relX = Math.max(-1, Math.min(1, (b.x - (brick.x + brick.w / 2)) / (brick.w / 2)));
+      b.vx += relX * (sp * 0.16);
+    }
+
+    // Micro-jitter to break closed geometric orbits
+    const jitter = (Math.random() - 0.5) * 0.08;
+    let ang = Math.atan2(b.vy, b.vx) + jitter;
+
+    // Escalate deflection if ball is stuck in repeated metal bounces
+    if (b.metalHits >= 6) {
+      ang += (Math.random() - 0.5) * 0.25;
+    }
+
+    b.vx = Math.cos(ang) * sp;
+    b.vy = Math.sin(ang) * sp;
+
+    // Prevent horizontal lock
+    enforceMinVerticalSpeed(b);
+  }
+
+  function triggerOrbitBreaker(b) {
+    const sp = speedOf(b) || getLevelSpeed();
+
+    // Find remaining destructible bricks
+    const targetBricks = bricks.filter(br => br.alive && br.type !== 'metal');
+    if (targetBricks.length > 0) {
+      let closest = targetBricks[0];
+      let minD = Infinity;
+      for (const br of targetBricks) {
+        const d = Math.hypot((br.x + br.w / 2) - b.x, (br.y + br.h / 2) - b.y);
+        if (d < minD) { minD = d; closest = br; }
+      }
+      const dx = (closest.x + closest.w / 2) - b.x;
+      const dy = (closest.y + closest.h / 2) - b.y;
+      const ang = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.35;
+      b.vx = Math.cos(ang) * sp;
+      b.vy = Math.sin(ang) * sp;
+    } else {
+      // Direct downward towards paddle
+      const ang = (Math.PI / 2) + (Math.random() - 0.5) * 0.6;
+      b.vx = Math.cos(ang) * sp;
+      b.vy = Math.sin(ang) * sp;
+    }
+
+    enforceMinVerticalSpeed(b);
+    b.metalHits = 0;
+    b.timeSinceProgress = 0;
+
+    floatingTextPool.spawn('ORBIT BREAKER! ⚡', b.x, Math.max(50, b.y - 12), '#38f9d7');
+    playTone(520, 0.1, 'triangle', 0.14, 680);
+    triggerShake(4, 100);
+
+    for (let p = 0; p < 8; p++) {
+      const pa = Math.random() * Math.PI * 2;
+      const ps = Math.random() * 3 + 1.2;
+      particlePool.spawn(b.x, b.y, Math.cos(pa) * ps, Math.sin(pa) * ps, '#38f9d7', 3, 300);
+    }
+  }
+
+  let lastNudgeTime = 0;
+  function nudgeBalls() {
+    if (state !== STATE.PLAYING || balls.length === 0) return;
+    const now = performance.now();
+    if (now - lastNudgeTime < 800) return;
+    lastNudgeTime = now;
+
+    triggerShake(6, 160);
+    playTone(200, 0.08, 'triangle', 0.14, 100);
+    floatingTextPool.spawn('NUDGE! ⚡', W / 2, H * 0.55, '#ffe66d');
+
+    for (const b of balls) {
+      if (b.caught) continue;
+      const sp = speedOf(b) || getLevelSpeed();
+      const kickAngle = (Math.random() - 0.5) * 0.8; // ~45 deg range
+      const newAng = Math.atan2(b.vy, b.vx) + kickAngle;
+      b.vx = Math.cos(newAng) * sp;
+      b.vy = Math.sin(newAng) * sp;
+      enforceMinVerticalSpeed(b);
+      b.metalHits = 0;
+      b.timeSinceProgress = 0;
+
+      for (let p = 0; p < 6; p++) {
+        const pa = Math.random() * Math.PI * 2;
+        const ps = Math.random() * 3 + 1;
+        particlePool.spawn(b.x, b.y, Math.cos(pa) * ps, Math.sin(pa) * ps, '#ffe66d', 2.5, 250);
+      }
+    }
+  }
+
+  function handleBricks(b) {
     const isFire = effects.fire > 0;
 
     for (const brick of bricks) {
@@ -1804,18 +2019,35 @@
           const minOverlapY = Math.min(overlapTop, overlapBottom);
 
           if (minOverlapX < minOverlapY) {
-            b.vx = -b.vx;
+            // Horizontal impact (left or right face)
             if (overlapLeft < overlapRight) {
+              if (b.vx > 0) b.vx = -b.vx;
               b.x = brick.x - b.r - 0.5;
             } else {
+              if (b.vx < 0) b.vx = -b.vx;
               b.x = brick.x + brick.w + b.r + 0.5;
             }
+            if (brick.type === 'metal') {
+              applyMetalDeflection(b, brick, 'x');
+            } else {
+              b.metalHits = 0;
+              b.timeSinceProgress = 0;
+              enforceMinVerticalSpeed(b);
+            }
           } else {
-            b.vy = -b.vy;
+            // Vertical impact (top or bottom face)
             if (overlapTop < overlapBottom) {
+              if (b.vy > 0) b.vy = -b.vy;
               b.y = brick.y - b.r - 0.5;
             } else {
+              if (b.vy < 0) b.vy = -b.vy;
               b.y = brick.y + brick.h + b.r + 0.5;
+            }
+            if (brick.type === 'metal') {
+              applyMetalDeflection(b, brick, 'y');
+            } else {
+              b.metalHits = 0;
+              b.timeSinceProgress = 0;
             }
           }
           break; // Stop after first bounce per substep
@@ -1952,9 +2184,24 @@
         b.y += (b.vy * speedFactor * step) / subSteps;
 
         // Wall bounces
-        if (b.x - b.r < 0) { b.x = b.r; b.vx = Math.abs(b.vx); playTone(300, 0.04, 'sine', 0.08); }
-        else if (b.x + b.r > W) { b.x = W - b.r; b.vx = -Math.abs(b.vx); playTone(300, 0.04, 'sine', 0.08); }
-        if (b.y - b.r < 40) { b.y = 40 + b.r; b.vy = Math.abs(b.vy); playTone(300, 0.04, 'sine', 0.08); }
+        if (b.x - b.r < 0) {
+          b.x = b.r;
+          b.vx = Math.abs(b.vx);
+          enforceMinVerticalSpeed(b);
+          b.metalHits = (b.metalHits || 0) + 1;
+          playTone(300, 0.04, 'sine', 0.08);
+        } else if (b.x + b.r > W) {
+          b.x = W - b.r;
+          b.vx = -Math.abs(b.vx);
+          enforceMinVerticalSpeed(b);
+          b.metalHits = (b.metalHits || 0) + 1;
+          playTone(300, 0.04, 'sine', 0.08);
+        }
+        if (b.y - b.r < 40) {
+          b.y = 40 + b.r;
+          b.vy = Math.abs(b.vy);
+          playTone(300, 0.04, 'sine', 0.08);
+        }
 
         // Bottom shield check
         if (effects.shield && b.y + b.r >= H - 5) {
@@ -1980,6 +2227,12 @@
 
       if (fellOff) {
         balls.splice(i, 1);
+      } else if (!b.caught) {
+        // Orbit breaker / anti-stuck check
+        b.timeSinceProgress = (b.timeSinceProgress || 0) + (dt / 1000);
+        if ((b.metalHits >= 10 && b.timeSinceProgress >= 3.5) || b.timeSinceProgress >= 6.0) {
+          triggerOrbitBreaker(b);
+        }
       }
     }
 
@@ -2006,13 +2259,15 @@
       lives--;
       livesLostThisLevel++;
       combo = 1;
-      triggerShake(6, 200);
       if (lives <= 0) {
+        screenShake.time = 0;
+        screenShake.mag = 0;
         updateHighScore();
         state = STATE.OVER;
         playGameOverSfx();
         showGamePromptOverlay('GAME OVER', 'The ball got away. Try again!', 'Play Again', `Score: ${score} &bull; Hi-Score: ${highScore}`, true, false);
       } else {
+        triggerShake(6, 200);
         resetBallsToStuck();
         state = STATE.READY;
         playTone(160, 0.2, 'sawtooth', 0.12);
@@ -2275,36 +2530,44 @@
     }
   }
 
-    function drawHUD() {
-    // 1. Top HUD Bar Glass Panel
-    ctx.fillStyle = 'rgba(7, 10, 20, 0.88)';
+  function drawHUD() {
+    ctx.save();
+    // 1. Top HUD Bar Background (Solid theme background + glass highlight)
+    ctx.fillStyle = THEMES[currentTheme].bg;
     ctx.fillRect(0, 0, W, 40);
-    ctx.fillStyle = 'rgba(56, 249, 215, 0.18)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+    ctx.fillRect(0, 0, W, 40);
+    
+    // Crisp 1px divider line between HUD and playfield
+    ctx.fillStyle = 'rgba(56, 249, 215, 0.22)';
     ctx.fillRect(0, 39, W, 1);
+
+    // Ensure clean vertical centering for all HUD text
+    ctx.textBaseline = 'middle';
 
     // 2. Score & Best (Top Left)
     ctx.textAlign = 'left';
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 13px system-ui, sans-serif';
     const scoreStr = `SCORE: ${score.toLocaleString()}`;
-    ctx.fillText(scoreStr, 12, 17);
+    ctx.fillText(scoreStr, 14, 16);
     
     const scoreWidth = ctx.measureText(scoreStr).width;
     ctx.fillStyle = '#ffd166';
     ctx.font = 'bold 11px system-ui, sans-serif';
-    ctx.fillText(`HI: ${highScore.toLocaleString()}`, 12 + scoreWidth + 10, 17);
+    ctx.fillText(`HI: ${highScore.toLocaleString()}`, 14 + scoreWidth + 10, 16);
 
     // 3. Lives & Combo (Top Center)
     ctx.textAlign = 'center';
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.fillStyle = '#ff4d8d';
-    ctx.fillText(`💖 × ${lives}`, W / 2, 17);
+    ctx.fillText(`💖 × ${lives}`, W / 2, 16);
     
     if (combo > 1) {
       ctx.textAlign = 'left';
       ctx.fillStyle = '#38f9d7';
       ctx.font = 'bold 11px system-ui, sans-serif';
-      ctx.fillText(`• COMBO x${combo}`, W / 2 + 35, 17);
+      ctx.fillText(`• COMBO x${combo}`, W / 2 + 35, 16);
     }
 
     // 4. Mode / Level / Wave (Top Right)
@@ -2315,17 +2578,17 @@
     
     ctx.fillStyle = '#38f9d7';
     ctx.textAlign = 'right';
-    ctx.fillText(lvlStr, W - 12, 17);
+    ctx.fillText(lvlStr, W - 14, 16);
     
     ctx.fillStyle = '#8892b0';
     ctx.font = 'bold 11px system-ui, sans-serif';
-    ctx.fillText(modePrefix, W - 12 - lvlWidth - 4, 17);
+    ctx.fillText(modePrefix, W - 14 - lvlWidth - 4, 16);
 
     if (isEndlessMode && currentMutator) {
       ctx.fillStyle = '#ffe66d';
-      ctx.font = 'bold 8px system-ui, sans-serif';
+      ctx.font = 'bold 8.5px system-ui, sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText(currentMutator.name.toUpperCase(), W - 12, 32);
+      ctx.fillText(currentMutator.name.toUpperCase(), W - 14, 30);
     }
 
     // 5. Active Power-Up Timers with countdown pill badges
@@ -2343,7 +2606,7 @@
       const badgeW = 74, badgeH = 15, gap = 6;
       const totalW = activeEffects.length * (badgeW + gap) - gap;
       let badgeX = Math.max(12, Math.min(W - totalW - 12, (W - totalW) / 2));
-      const badgeY = 23;
+      const badgeY = 22;
 
       for (const eff of activeEffects) {
         const remRatio = Math.max(0, eff.time / eff.max);
@@ -2370,7 +2633,7 @@
         ctx.fillStyle = eff.isDanger ? '#ffffff' : '#04121a';
         ctx.font = 'bold 8.5px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(`${eff.name} ${remSec}s`, badgeX + badgeW / 2, badgeY + 11);
+        ctx.fillText(`${eff.name} ${remSec}s`, badgeX + badgeW / 2, badgeY + badgeH / 2);
 
         badgeX += badgeW + gap;
       }
@@ -2383,9 +2646,10 @@
       ctx.textAlign = 'center';
       ctx.fillText(msg, W / 2, H / 2);
     }
+    ctx.restore();
   }
 
-    function drawToasts() {
+  function drawToasts() {
     let ty = 14;
     for (const t of toasts) {
       ctx.fillStyle = 'rgba(11, 14, 26, 0.95)';
@@ -2422,7 +2686,7 @@
     ctx.textAlign = 'left';
     ctx.fillStyle = '#e6f1ff';
     ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText('Controls: Mouse / Touch / A / D Move • Space / Tap Launch / Shoot • P: Pause • H: Guide', 30, 60);
+    ctx.fillText('Controls: Mouse/Touch/A/D Move • Space/Tap Launch/Shoot • N/⚡/Space Nudge • P: Pause • H: Guide', 30, 60);
 
     let y = 82;
     ctx.fillStyle = '#38f9d7';
@@ -2492,13 +2756,7 @@
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Screen Shake
-    if (screenShake.time > 0) {
-      const ox = (Math.random() - 0.5) * screenShake.mag;
-      const oy = (Math.random() - 0.5) * screenShake.mag;
-      ctx.translate(ox, oy);
-    }
-
+    // 1. Static Clean Background (Always crisp, never translated by screen shake)
     ctx.fillStyle = THEMES[currentTheme].bg;
     ctx.fillRect(0, 0, W, H);
 
@@ -2524,6 +2782,14 @@
       }
     }
 
+    // 2. Playfield Shake Layer (Applies shake only to active game entities)
+    ctx.save();
+    if (screenShake.time > 0 && (state === STATE.PLAYING || state === STATE.READY)) {
+      const ox = (Math.random() - 0.5) * screenShake.mag;
+      const oy = (Math.random() - 0.5) * screenShake.mag;
+      ctx.translate(ox, oy);
+    }
+
     drawBricks();
     drawParticles();
     drawLasers();
@@ -2532,6 +2798,9 @@
     drawBalls();
     drawShield();
     drawFloatingTexts();
+    ctx.restore(); // Restore camera before drawing HUD & UI
+
+    // 3. Static UI Layer - 100% rock-solid, zero shake, zero flicker
     drawHUD();
     drawToasts();
 
@@ -2545,6 +2814,13 @@
     lastT = t;
     if (dt > 100) lastT = t;
     if (state === STATE.PLAYING || state === STATE.READY) update(dt);
+    if (screenShake.time > 0) {
+      screenShake.time -= dt;
+      if (screenShake.time <= 0) {
+        screenShake.time = 0;
+        screenShake.mag = 0;
+      }
+    }
     draw();
     requestAnimationFrame(loop);
   }
@@ -2566,6 +2842,8 @@
 
   function showMainMenu() {
     state = STATE.MENU;
+    screenShake.time = 0;
+    screenShake.mag = 0;
     document.getElementById('pbMain').textContent = `Personal Best: ${highScore}`;
     
     // Sync skin button states
@@ -3151,29 +3429,69 @@
   function speedOf(b) { return Math.hypot(b.vx, b.vy); }
 
   function updateMuteUI() {
-    muteBtn.textContent = muted ? '🔇' : '🔊';
+    if (muteBtn) {
+      muteBtn.textContent = muted ? '🔇' : '🔊';
+      muteBtn.title = muted ? 'Sound: Muted (M) - Click to Unmute' : 'Sound: On (M) - Click to Mute';
+      muteBtn.classList.toggle('muted', muted);
+    }
     if (audioCtx) {
-      if (masterGainNode) {
-        masterGainNode.gain.setValueAtTime(muted ? 0.0001 : 1.0, audioCtx.currentTime);
-      }
-      if (muted || currentMusic === 'off') {
-        stopMusicEngine();
-        if (musicGainNode) {
-          musicGainNode.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      const t = audioCtx.currentTime;
+      if (muted) {
+        if (masterGainNode) {
+          masterGainNode.gain.cancelScheduledValues(t);
+          masterGainNode.gain.setValueAtTime(0, t);
         }
-      } else {
-        startMusicEngine();
         if (musicGainNode) {
-          const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
-          musicGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
-          musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, audioCtx.currentTime);
-          musicGainNode.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 0.15);
+          musicGainNode.gain.cancelScheduledValues(t);
+          musicGainNode.gain.setValueAtTime(0, t);
+        }
+        if (currentTrackGain) {
+          currentTrackGain.gain.cancelScheduledValues(t);
+          currentTrackGain.gain.setValueAtTime(0, t);
+        }
+        if (sfxGainNode) {
+          sfxGainNode.gain.cancelScheduledValues(t);
+          sfxGainNode.gain.setValueAtTime(0, t);
+        }
+        stopMusicEngine();
+      } else {
+        if (masterGainNode) {
+          masterGainNode.gain.cancelScheduledValues(t);
+          masterGainNode.gain.setValueAtTime(1.0, t);
+        }
+        if (sfxGainNode) {
+          sfxGainNode.gain.cancelScheduledValues(t);
+          sfxGainNode.gain.setValueAtTime(0.9, t);
+        }
+        if (currentMusic === 'off') {
+          stopMusicEngine();
+          if (musicGainNode) {
+            musicGainNode.gain.cancelScheduledValues(t);
+            musicGainNode.gain.setValueAtTime(0, t);
+          }
+          if (currentTrackGain) {
+            currentTrackGain.gain.cancelScheduledValues(t);
+            currentTrackGain.gain.setValueAtTime(0, t);
+          }
+        } else {
+          if (currentTrackGain) {
+            currentTrackGain.gain.cancelScheduledValues(t);
+            currentTrackGain.gain.setValueAtTime(1.0, t);
+          }
+          startMusicEngine();
+          if (musicGainNode) {
+            const targetVol = (state === STATE.MENU ? 0.07 : 0.11);
+            musicGainNode.gain.cancelScheduledValues(t);
+            musicGainNode.gain.setValueAtTime(0, t);
+            musicGainNode.gain.linearRampToValueAtTime(targetVol, t + 0.15);
+          }
         }
       }
     }
   }
 
   function toggleMute() {
+    initAudio();
     muted = !muted;
     try {
       localStorage.setItem('breakout_muted', muted ? 'true' : 'false');
@@ -3183,6 +3501,8 @@
 
   function togglePause() {
     if (state === STATE.PLAYING) {
+      screenShake.time = 0;
+      screenShake.mag = 0;
       prevState = state;
       state = STATE.PAUSED;
       showGamePromptOverlay('PAUSED', 'Game paused. Take a breath.', 'Resume', `Score: ${score} &bull; Hi-Score: ${highScore}`, true, false);
@@ -3263,7 +3583,19 @@
     });
   }
 
-  muteBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleMute(); });
+  if (nudgeBtn) {
+    nudgeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      initAudio();
+      nudgeBalls();
+    });
+  }
+
+  muteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    initAudio();
+    toggleMute();
+  });
   pauseBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePause(); });
   fullscreenBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleFullscreen(); });
 
@@ -3307,10 +3639,18 @@
         state = STATE.PLAYING;
         overlay.classList.add('hidden');
       } else if (state === STATE.PLAYING) {
-        releaseCaughtBalls();
-        fireLaser();
+        if (effects.laser > 0) {
+          fireLaser();
+        } else {
+          const hadCaught = balls.some(b => b.caught);
+          releaseCaughtBalls();
+          if (!hadCaught) {
+            nudgeBalls();
+          }
+        }
       }
     }
+    if (e.key === 'n' || e.key === 'N') nudgeBalls();
     if (e.key === 'p' || e.key === 'P') togglePause();
     if (e.key === 'b' || e.key === 'B') cycleMusicTrack(true);
     if (e.key === 'm' || e.key === 'M') toggleMute();
