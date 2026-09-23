@@ -594,8 +594,15 @@
 <script>
 (() => {
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   const W = 480, H = 600;
+
+  let cachedCanvasRect = null;
+  function updateCanvasRect() {
+    if (canvas) {
+      cachedCanvasRect = canvas.getBoundingClientRect();
+    }
+  }
 
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -603,9 +610,11 @@
     canvas.height = Math.round(H * dpr);
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
+    updateCanvasRect();
   }
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('scroll', updateCanvasRect, { passive: true });
 
   // HTML UI Selectors
   const overlay = document.getElementById('overlay');
@@ -632,6 +641,7 @@
   let combo = 1;
   let highScore = parseInt(localStorage.getItem('breakout_hi_score') || '0', 10);
   let bricks = [];
+  let destructibleBricksCount = 0;
   let isEndlessMode = false;
   let maxUnlockedLevel = parseInt(localStorage.getItem('breakout_unlocked_level') || '1', 10);
 
@@ -768,6 +778,34 @@
     });
   }
 
+  // Pre-rendered Background Cache & Star Color Cache
+  let bgCanvas = null;
+  let bgCtx = null;
+  function renderBackgroundCache() {
+    if (!bgCanvas) {
+      bgCanvas = document.createElement('canvas');
+      bgCanvas.width = W;
+      bgCanvas.height = H;
+      bgCtx = bgCanvas.getContext('2d');
+    }
+    bgCtx.fillStyle = THEMES[currentTheme].bg;
+    bgCtx.fillRect(0, 0, W, H);
+    bgCtx.fillStyle = THEMES[currentTheme].gridColor;
+    for (let x = 0; x < W; x += 30) { bgCtx.fillRect(x, 0, 1, H); }
+    for (let y = 0; y < H; y += 30) { bgCtx.fillRect(0, y, W, 1); }
+  }
+
+  let starColorCache = [];
+  function updateStarColorCache() {
+    starColorCache = [];
+    const prefix = THEMES[currentTheme].starColor;
+    for (let i = 0; i <= 10; i++) {
+      starColorCache.push(`${prefix}${(i / 10).toFixed(1)})`);
+    }
+  }
+  renderBackgroundCache();
+  updateStarColorCache();
+
   // ---- Power-ups ----
   const POWERUPS = {
     WIDE:    { label: 'W',    color: '#4dd0ff', desc: 'Wider paddle for 12s', isNegative: false },
@@ -803,17 +841,20 @@
       }
     },
     spawn(x, y, vx, vy, color, size, maxLife) {
-      const p = this.pool.find(item => !item.active);
-      if (p) {
-        p.active = true;
-        p.x = x;
-        p.y = y;
-        p.vx = vx;
-        p.vy = vy;
-        p.color = color;
-        p.size = size;
-        p.life = 0;
-        p.maxLife = maxLife;
+      for (let i = 0; i < this.pool.length; i++) {
+        const p = this.pool[i];
+        if (!p.active) {
+          p.active = true;
+          p.x = x;
+          p.y = y;
+          p.vx = vx;
+          p.vy = vy;
+          p.color = color;
+          p.size = size;
+          p.life = 0;
+          p.maxLife = maxLife;
+          return;
+        }
       }
     },
     update(dt, step) {
@@ -849,14 +890,17 @@
       }
     },
     spawn(x, y, vy, w, h) {
-      const l = this.pool.find(item => !item.active);
-      if (l) {
-        l.active = true;
-        l.x = x;
-        l.y = y;
-        l.vy = vy;
-        l.w = w;
-        l.h = h;
+      for (let i = 0; i < this.pool.length; i++) {
+        const l = this.pool[i];
+        if (!l.active) {
+          l.active = true;
+          l.x = x;
+          l.y = y;
+          l.vy = vy;
+          l.w = w;
+          l.h = h;
+          return;
+        }
       }
     },
     update(dt) {
@@ -894,16 +938,19 @@
       }
     },
     spawn(text, x, y, color = '#ffd166') {
-      const ft = this.pool.find(item => !item.active);
-      if (ft) {
-        ft.active = true;
-        ft.text = text;
-        ft.x = x;
-        ft.y = y;
-        ft.color = color;
-        ft.life = 0;
-        ft.maxLife = 800;
-        ft.vy = -1.2;
+      for (let i = 0; i < this.pool.length; i++) {
+        const ft = this.pool[i];
+        if (!ft.active) {
+          ft.active = true;
+          ft.text = text;
+          ft.x = x;
+          ft.y = y;
+          ft.color = color;
+          ft.life = 0;
+          ft.maxLife = 800;
+          ft.vy = -1.2;
+          return;
+        }
       }
     },
     update(dt, step) {
@@ -937,13 +984,16 @@
       }
     },
     spawn(x, y, vy, type) {
-      const p = this.pool.find(item => !item.active);
-      if (p) {
-        p.active = true;
-        p.x = x;
-        p.y = y;
-        p.vy = vy;
-        p.type = type;
+      for (let i = 0; i < this.pool.length; i++) {
+        const p = this.pool[i];
+        if (!p.active) {
+          p.active = true;
+          p.x = x;
+          p.y = y;
+          p.vy = vy;
+          p.type = type;
+          return;
+        }
       }
     },
     update(dt, step) {
@@ -1088,7 +1138,7 @@
   let musicStep = 0;
   let nextStepTime = 0;
   let musicSchedulerTimer = null;
-  let activeMusicVoices = [];
+  let activeMusicVoices = new Set();
 
   const PENTATONIC = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25];
 
@@ -1108,7 +1158,7 @@
         if (v.disconnect) v.disconnect();
       } catch (e) {}
     }
-    activeMusicVoices = [];
+    activeMusicVoices.clear();
 
     // Fade out and disconnect the previous track sub-bus
     if (currentTrackGain && audioCtx) {
@@ -1133,16 +1183,10 @@
 
   function registerMusicVoice(node) {
     if (!node) return;
-    activeMusicVoices.push(node);
-    const onEnd = () => {
-      const idx = activeMusicVoices.indexOf(node);
-      if (idx !== -1) activeMusicVoices.splice(idx, 1);
+    activeMusicVoices.add(node);
+    node.onended = () => {
+      activeMusicVoices.delete(node);
     };
-    if (node.addEventListener) {
-      node.addEventListener('ended', onEnd);
-    } else {
-      node.onended = onEnd;
-    }
   }
 
   function initAudio() {
@@ -1864,6 +1908,9 @@
 
     if (brick.hp <= 0) {
       brick.alive = false;
+      if (brick.type !== 'metal') {
+        destructibleBricksCount--;
+      }
       playBrickShatterSfx();
       
       if (brick.type === 'explosive') {
@@ -2236,9 +2283,10 @@
       }
     }
 
-    // Level Clear / Win Check
-    if (bricks.every(x => !x.alive || x.type === 'metal')) {
+    // Level Clear / Win Check (O(1) destructible bricks counter check)
+    if (destructibleBricksCount <= 0) {
       updateHighScore();
+      saveStats(true);
       if (levelPowerupsCount === 0) {
         unlockAchievement('purist');
       }
@@ -2263,6 +2311,7 @@
         screenShake.time = 0;
         screenShake.mag = 0;
         updateHighScore();
+        saveStats(true);
         state = STATE.OVER;
         playGameOverSfx();
         showGamePromptOverlay('GAME OVER', 'The ball got away. Try again!', 'Play Again', `Score: ${score} &bull; Hi-Score: ${highScore}`, true, false);
@@ -2275,13 +2324,21 @@
       }
     }
     
-    // Save paddle prevX at the end of update
+    // Save paddle prevX at the end of update and throttle stats saving
     paddle.prevX = paddle.x;
-    saveStats();
+    statsDirty = true;
+    if (performance.now() - lastStatsSaveTime > 3000) {
+      saveStats();
+    }
   }
 
   // ---- Renderers ----
   function roundRect(x, y, w, h, r) {
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      return;
+    }
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -2756,14 +2813,9 @@
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // 1. Static Clean Background (Always crisp, never translated by screen shake)
-    ctx.fillStyle = THEMES[currentTheme].bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // Cyber Grid
-    ctx.fillStyle = THEMES[currentTheme].gridColor;
-    for (let x = 0; x < W; x += 30) { ctx.fillRect(x, 0, 1, H); }
-    for (let y = 0; y < H; y += 30) { ctx.fillRect(0, y, W, 1); }
+    // 1. Static Clean Background (Pre-rendered offscreen cache for maximum GPU efficiency)
+    if (!bgCanvas) renderBackgroundCache();
+    ctx.drawImage(bgCanvas, 0, 0);
 
     // Ambient stars (Or Matrix Falling Code)
     for (const s of stars) {
@@ -2775,7 +2827,8 @@
         const randomChar = chars[Math.floor(Math.random() * chars.length)];
         ctx.fillText(randomChar, s.x, s.y);
       } else {
-        ctx.fillStyle = THEMES[currentTheme].starColor + `${s.alpha})`;
+        const cIdx = Math.min(10, Math.max(0, Math.floor(s.alpha * 10)));
+        ctx.fillStyle = starColorCache[cIdx] || (THEMES[currentTheme].starColor + `${s.alpha})`);
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
         ctx.fill();
@@ -2926,13 +2979,24 @@
     }
   }
 
-  function saveStats() {
+  let statsDirty = false;
+  let lastStatsSaveTime = 0;
+
+  function markStatsDirty() {
+    statsDirty = true;
+  }
+
+  function saveStats(force = false) {
+    const now = performance.now();
+    if (!force && (!statsDirty || (now - lastStatsSaveTime < 3000))) return;
     try {
       // Sync max combo achieved in this run to stats
       if (combo - 1 > stats.maxCombo) {
         stats.maxCombo = combo - 1;
       }
       localStorage.setItem('breakout_stats', JSON.stringify(stats));
+      statsDirty = false;
+      lastStatsSaveTime = now;
     } catch (e) {}
   }
 
@@ -3174,6 +3238,7 @@
         bricks.push({ r, c, x, y, baseX: x, baseY: y, w: BRICK_W, h: BRICK_H, alive: true, type, hp, maxHp: hp, color });
       }
     }
+    destructibleBricksCount = bricks.filter(b => b.type !== 'metal').length;
   }
 
   function makeStuckBall() {
@@ -3245,6 +3310,7 @@
     resetBallsToStuck();
     state = STATE.READY;
     playLevelClearFanfare();
+    saveStats(true);
     
     showGamePromptOverlay(
       isEndlessMode ? `WAVE ${level} • ${currentMutator.name.toUpperCase()}` : 'LEVEL ' + level,
@@ -3531,6 +3597,27 @@
     } else {
       fullscreenBtn.textContent = '⛶';
     }
+    updateCanvasRect();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (state === STATE.PLAYING) {
+        togglePause();
+      }
+      if (audioCtx && audioCtx.state === 'running') {
+        audioCtx.suspend().catch(() => {});
+      }
+    } else {
+      if (audioCtx && audioCtx.state === 'suspended' && !muted) {
+        audioCtx.resume().catch(() => {});
+      }
+      updateCanvasRect();
+    }
+  });
+
+  window.addEventListener('beforeunload', () => {
+    saveStats(true);
   });
 
   // ---- UI Event Listeners ----
@@ -3612,6 +3699,10 @@
       document.documentElement.style.setProperty('--bg', THEMES[currentTheme].bg);
       document.documentElement.style.setProperty('--accent', THEMES[currentTheme].paddleGlow || '#38f9d7');
       
+      // Rebreathe offscreen background cache & star colors
+      renderBackgroundCache();
+      updateStarColorCache();
+
       // Rebreathe brick styles
       buildBricks();
     });
@@ -3664,6 +3755,7 @@
     if (DEBUG) {
       if (e.key === 'k' || e.key === 'K') {
         bricks.forEach(b => { if (b.type !== 'metal') b.alive = false; });
+        destructibleBricksCount = 0;
         setMsg('BRICKS CLEARED!');
       }
       if (e.key === 'l' || e.key === 'L') activatePowerup('LASER');
@@ -3692,7 +3784,8 @@
 
   function handlePointerMove(clientX) {
     if (state !== STATE.READY && state !== STATE.PLAYING) return;
-    const rect = canvas.getBoundingClientRect();
+    if (!cachedCanvasRect) updateCanvasRect();
+    const rect = cachedCanvasRect || canvas.getBoundingClientRect();
     const rel = (clientX - rect.left) / rect.width * W;
     const pw = currentPaddleWidth();
     
